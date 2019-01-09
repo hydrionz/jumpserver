@@ -24,6 +24,7 @@ class AuthBook(AssetUser):
     def get_latest_item_by_username_asset(cls, username, asset):
         try:
             item = AuthBook.objects.filter(username=username, asset=asset).latest()
+            logger.debug('Get auth book item {}@{}'.format(username, asset))
         except AuthBook.DoesNotExist as e:
             logger.debug(
                 'msg: {} (username: {}, asset: {})'.format(e, username, asset)
@@ -33,12 +34,13 @@ class AuthBook(AssetUser):
 
     @classmethod
     def create_item(cls, username, password, asset):
-        obj = cls.objects.create(
+        item = cls.objects.create(
             name='{}@{}'.format(username, asset), username=username,
             asset=asset
         )
-        obj.set_auth(password=password)
-        return obj
+        item.set_auth(password=password)
+        logger.debug('Create auth book item {}@{}'.format(username, asset))
+        return item
 
     class Meta:
         get_latest_by = 'date_created'
