@@ -199,7 +199,7 @@ class Asset(OrgModelMixin):
         if self.admin_user:
             return {
                 'username': self.admin_user.username,
-                'password': self.admin_user.password,
+                'password': self.admin_user.get_password(self),
                 'private_key': self.admin_user.private_key_file,
                 'become': self.admin_user.become_info,
             }
@@ -235,7 +235,7 @@ class Asset(OrgModelMixin):
             admin_user = self.admin_user
             data.update({
                 'username': admin_user.username,
-                'password': admin_user.password,
+                'password': admin_user.get_password(self),
                 'private_key': admin_user.private_key_file,
                 'become': admin_user.become_info,
                 'groups': [node.value for node in self.nodes.all()],
