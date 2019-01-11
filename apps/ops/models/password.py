@@ -9,10 +9,10 @@ from django.utils.translation import ugettext as _
 
 from orgs.mixins import OrgModelMixin
 from assets.models import AuthBook
-from common.validators import alphanumeric
-from common.utils import get_signer, get_logger, encrypt_password
-from common.utils import random_password_gen
 from assets.tasks import clean_hosts, const
+from common.validators import alphanumeric
+from common.utils import get_signer, get_logger, encrypt_password, \
+    random_password_gen
 from ..ansible import AdHocRunner, AnsibleError
 from ..inventory import JMSInventory
 
@@ -39,7 +39,7 @@ class ChangeAssetPasswordTask(OrgModelMixin):
     id = models.UUIDField(default=uuid.uuid4, primary_key=True)
     name = models.CharField(max_length=128, verbose_name=_('Name'))
     username = models.CharField(max_length=32, verbose_name=_('Username'), validators=[alphanumeric])
-    hosts = models.ManyToManyField('assets.Asset')
+    hosts = models.ManyToManyField('assets.Asset', verbose_name=_('Asset'))
     comment = models.TextField(blank=True, verbose_name=_('Comment'))
     date_created = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
@@ -47,6 +47,17 @@ class ChangeAssetPasswordTask(OrgModelMixin):
 
     def __str__(self):
         return self.name
+
+    class Meta:
+        unique_together = [('org_id', 'name')]
+
+    @property
+    def run_times(self):
+        return len(self.changeassetpasswordtaskhistory_set.all())
+
+    @property
+    def hosts_name(self):
+        return [host.hostname for host in self.hosts.all().order_by('hostname')]
 
     def run(self, record=True):
         if record:
@@ -60,12 +71,13 @@ class ChangeAssetPasswordTask(OrgModelMixin):
             history.date_start = timezone.now()
             result = self._run_only()
             history.result = result
+            history.is_success = True
             return result
         except Exception as e:
             logger.warning(e)
+            history.is_success = False
             return {}
         finally:
-            history.is_finished = True
             history.date_finished = timezone.now()
             history.save()
 
@@ -76,7 +88,7 @@ class ChangeAssetPasswordTask(OrgModelMixin):
                 'total': 0, 'success': 0, 'failed': 0,
             },
             'detail': {
-                'failed': [], 'success': [{'hostname': 'xxx', 'msg': ''},]
+                'failed': [], 'success': [{'hostname': 'xxx', 'id': '', 'msg': ''},]
             },
             'msg': 'Success',
         }
@@ -84,12 +96,13 @@ class ChangeAssetPasswordTask(OrgModelMixin):
         """
         result = {
             'count': {'total': 0, 'success': 0, 'failed': 0},
-            'detail': {'success': [], 'failed': []},
+            'detail': [],
             'msg': 'Success',
+            'username': self.username,
         }
 
         count_success = count_failed = 0
-        detail_success = detail_failed = []
+        detail = []
 
         if self.username == 'root':
             msg = _('Change <{}> password is not allowed'.format(self.username))
@@ -113,25 +126,29 @@ class ChangeAssetPasswordTask(OrgModelMixin):
 
                 if self.is_success(verify_result):
                     count_success += 1
+                    msg = '-'
+                    success = True
                     AuthBook.create_item(self.username, password, host)
-                    msg = 'Change and verify password success: {}'
-                    detail_success.append({'hostname': host.hostname, 'msg': msg})
                 else:
                     count_failed += 1
                     error = self.get_dark_msg(verify_result, host.hostname, 'ping')
                     msg = 'Verify password failed: {}'.format(error)
-                    detail_failed.append({'hostname': host.hostname, 'msg': msg})
+                    success = False
             else:
                 count_failed += 1
                 error = self.get_dark_msg(change_result, host.hostname, 'change_password')
                 msg = 'Change password failed: {}'.format(error)
-                detail_failed.append({'hostname': host.hostname, 'msg': msg})
+                success = False
+
+            detail.append({
+                'id': str(host.id), 'hostname': host.hostname,
+                'success': success, 'msg': msg
+            })
 
         result['count']['total'] = len(hosts)
         result['count']['success'] = count_success
-        result['count']['success'] = count_failed
-        result['detail']['success'] = detail_success
-        result['detail']['failed'] = detail_failed
+        result['count']['failed'] = count_failed
+        result['detail'] = sorted(detail, key=lambda x: x.get('success'))
         return result
 
     @staticmethod
@@ -144,8 +161,12 @@ class ChangeAssetPasswordTask(OrgModelMixin):
     def get_dark_msg(result, hostname, task_name):
         try:
             dark = result.results_summary.get('dark')
-            msg = dark.get(hostname).get(task_name).get('msg')
-            return msg
+            task = dark.get(hostname).get(task_name)
+            unreachable = task.get('unreachable', False)
+            if unreachable:
+                return "Unreachable"
+            else:
+                return "Authentication failure"
         except Exception as e:
             logger.error('Get dark msg error: {}'.format(e))
             return ''
@@ -196,7 +217,7 @@ class ChangeAssetPasswordTaskHistory(models.Model):
     id = models.UUIDField(default=uuid.uuid4, primary_key=True)
     task = models.ForeignKey('ops.ChangeAssetPasswordTask', on_delete=models.CASCADE, verbose_name=_('Change password task'))
     _result = models.TextField(blank=True, null=True, verbose_name=_('Result'))
-    is_finished = models.BooleanField(default=False)
+    is_success = models.BooleanField(default=False)
     date_start = models.DateTimeField(null=True)
     date_finished = models.DateTimeField(null=True)
 
@@ -210,3 +231,24 @@ class ChangeAssetPasswordTaskHistory(models.Model):
     @result.setter
     def result(self, item):
         self._result = json.dumps(item)
+
+    @property
+    def total_hosts(self):
+        return self.result.get('count').get('total')
+
+    @property
+    def success_hosts(self):
+        return self.result.get('count').get('success')
+
+    @property
+    def failed_hosts(self):
+        return self.result.get('count').get('failed')
+
+    @property
+    def time(self):
+        time = self.date_finished - self.date_start
+        seconds = time.total_seconds()
+        return round(seconds, 1)
+
+    class Meta:
+        ordering = ['-date_start', '-date_finished']

@@ -86,17 +86,23 @@
     </a>
     <ul class="nav nav-second-level">
         {% for plugin in XPACK_PLUGINS %}
-            {% ifequal plugin.name 'cloud'%}
+            {% if plugin.name == 'cloud' or plugin.name == 'password' %}
                 <li id="{{ plugin.name }}">
                     <a href="#"><span class="nav-label">{% trans plugin.verbose_name %}</span><span class="fa arrow"></span></a>
                     <ul class="nav nav-third-level">
+                    {% if plugin.name == 'cloud' %}
                         <li id="account"><a href="{% url 'xpack:cloud:account-list' %}">{% trans 'Account list' %}</a></li>
                         <li id="sync-instance-task"><a href="{% url 'xpack:cloud:sync-instance-task-list' %}">{% trans 'Sync instance' %}</a></li>
+                    {% elif plugin.name == 'password' %}
+                        <li id="bulk-change-password-task"><a href="{% url 'xpack:password:bulk-change-password-task-list' %}">{% trans 'Task list' %}</a></li>
+                        <li id="bulk-password-change-log"><a href="{% url 'xpack:password:bulk-password-change-log-list' %}">{% trans 'Password change log' %}</a></li>
+                    {% else %}
+                    {% endif %}
                     </ul>
                 </li>
             {% else %}
                 <li id="{{ plugin.name }}"><a href="{{ plugin.endpoint }}">{% trans plugin.verbose_name %}</a></li>
-            {% endifequal %}
+            {% endif %}
         {% endfor %}
     </ul>
 </li>

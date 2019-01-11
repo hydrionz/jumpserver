@@ -152,6 +152,12 @@ function activeNav() {
         $('#' + app + ' #' + resource).addClass('active');
         $('#' + app + ' #' + resource + ' #' + item + ' a').css('color', '#ffffff');
     }
+    else if (app === 'xpack' && resource === 'password') {
+        var item = url_array[3];
+        $("#" + app).addClass('active');
+        $('#' + app + ' #' + resource).addClass('active');
+        $('#' + app + ' #' + resource + ' #' + item + ' a').css('color', '#ffffff');
+    }
     else if (app === 'settings'){
         $("#" + app).addClass('active');
     }

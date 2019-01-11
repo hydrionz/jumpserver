@@ -63,7 +63,7 @@ def hello_callback(result):
 
 
 @shared_task
-def change_asset_password(tid, **kwargs):
+def bulk_change_asset_password(tid, **kwargs):
     from ops.models import ChangeAssetPasswordTask
     task = get_object_or_none(ChangeAssetPasswordTask, id=tid)
     if task:
