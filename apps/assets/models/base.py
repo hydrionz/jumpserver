@@ -60,11 +60,11 @@ class AssetUser(OrgModelMixin):
     def _select_password_latest(self, item):
         if self.date_updated > item.date_updated:
             print('Use <{}>@<{}> auth info of self'.
-                  format(self.username, item.asset, item.password))
+                  format(self.username, item.asset))
             return self.password
         else:
             print('Use <{}>@<{}> auth info of AuthBook'.
-                  format(self.username, item.asset, item.password))
+                  format(self.username, item.asset))
             return item.password
 
     @password.setter
