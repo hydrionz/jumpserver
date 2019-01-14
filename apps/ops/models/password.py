@@ -48,10 +48,6 @@ class ChangePasswordAssetTask(OrgModelMixin):
     date_last_run = models.DateTimeField(null=True, verbose_name=_('Date last run'))
     created_by = models.CharField(max_length=128, blank=True, verbose_name=_('Created by'))
 
-    #
-    # main-task
-    #
-
     def run(self, record=True):
         if record:
             return self._run_and_record()
@@ -63,63 +59,41 @@ class ChangePasswordAssetTask(OrgModelMixin):
         time_start = time.time()
         try:
             history.date_start = timezone.now()
-            self._run_only()
-            history.is_success = True
+            is_success, reason = self._run_only()
+            history.is_success = is_success
+            history.reason = reason
         except Exception as e:
-            logger.warning(e)
-            history.reason = '-task-exception-'
             history.is_success = False
+            history.reason = '-task-exception-'
+            logger.warning(e)
         finally:
             history.timedelta = time.time() - time_start
             history.date_finished = timezone.now()
             history.save()
 
-    def _run_only(self):
+    def _is_can_run(self, hosts=None):
         if self.username == 'root':
-            logger.debug(_('Change <{}> password is not allowed'.format(self.username)))
-            return
+            reason = 'Change <{}> password is not allowed'.format(self.username)
+            logger.debug(reason)
+            return False, reason
 
-        hosts = clean_hosts(self.hosts.all())
         if not hosts:
-            logger.debug(_('No host needs to change password'))
-            return
+            reason = 'No host needs to change password'
+            logger.debug(reason)
+            return False, reason
+
+        return True, '-'
+
+    def _run_only(self):
+        hosts = clean_hosts(self.hosts.all())
+        ok, reason = self._is_can_run(hosts)
+        if not ok:
+            return False, reason
 
         for host in hosts:
             self.run_subtask(host)
 
-    #
-    # sub-task
-    #
-
-    @staticmethod
-    def result_success(result):
-        if result and result.results_summary.get('contacted'):
-            return True
-        return False
-
-    @staticmethod
-    def get_result_failed_msg(result, hostname, task_name):
-        try:
-            msg = result.results_summary.get('dark').\
-                get(hostname).get(task_name).get('msg')
-        except Exception as e:
-            logger.debug(e)
-            return 'Unknown'
-        else:
-            return msg
-
-    def get_change_password_task(self, password):
-        tasks = list()
-        tasks.append({
-            'name': 'change_password',
-            'action': {
-                'module': 'user',
-                'args': 'name={} password={} update_password=always'.format(
-                    self.username, encrypt_password(password, salt="K3mIlKK")
-                ),
-            }
-        })
-        return tasks
+        return True, reason
 
     def run_subtask(self, host, record=True):
         if record:
@@ -132,8 +106,10 @@ class ChangePasswordAssetTask(OrgModelMixin):
         time_start = time.time()
         try:
             history.date_start = timezone.now()
-            self._run_subtask_only(host=host, history=history)
-            history.is_success = True
+            is_success, reason, password = self._run_subtask_only(host)
+            history.is_success = is_success
+            history.reason = reason
+            history.password = password
         except Exception as e:
             logger.warning(e)
             history.reason = '-sub-task-exception-'
@@ -143,34 +119,45 @@ class ChangePasswordAssetTask(OrgModelMixin):
             history.date_finished = timezone.now()
             history.save()
 
-    def _run_subtask_only(self, host, history=None):
+    def _run_subtask_only(self, host):
+        """
+        :return: is_success, reason, password
+        """
+        hosts = clean_hosts([host])
+        ok, reason = self._is_can_run(hosts)
+        if not ok:
+            return False, reason, None
+
         password = random_password_gen()
+        is_success, reason = self.change_password(password, host)
+        return is_success, reason, password
 
-        if history is not None:
-            history.password = password
-
-        self.change_password(password, host, history)
-
-    def change_password(self, password, host, history):
+    def change_password(self, password, host):
         result = self._change_password(password, host)
 
         if self.result_success(result):
-            self.verify_password(password, host, history)
+            is_success, reason = self.verify_password(password, host)
         else:
+            is_success = False
             msg = self.get_result_failed_msg(result, host.hostname,
                                              'change_password')
             reason = '{}:{}'.format('Change password', msg)
-            history.reason = reason
 
-    def verify_password(self, password, host, history):
+        return is_success, reason
+
+    def verify_password(self, password, host):
         result = self._verify_password(password, host)
 
         if self.result_success(result):
+            is_success = True
+            reason = '-'
             AuthBook.create_item(self.username, password, host)
         else:
+            is_success = False
             msg = self.get_result_failed_msg(result, host.hostname, 'ping')
             reason = '{}:{}'.format('Verify password', msg)
-            history.reason = reason
+
+        return is_success, reason
 
     def _change_password(self, password, host):
         task_name = _('Change <{}> password of asset <{}>'.format(self.username,
@@ -197,6 +184,36 @@ class ChangePasswordAssetTask(OrgModelMixin):
             return None
         else:
             return result
+
+    @staticmethod
+    def result_success(result):
+        if result and result.results_summary.get('contacted'):
+            return True
+        return False
+
+    @staticmethod
+    def get_result_failed_msg(result, hostname, task_name):
+        try:
+            msg = result.results_summary.get('dark'). \
+                get(hostname).get(task_name).get('msg')
+        except Exception as e:
+            logger.debug(e)
+            return 'Unknown'
+        else:
+            return msg
+
+    def get_change_password_task(self, password):
+        tasks = list()
+        tasks.append({
+            'name': 'change_password',
+            'action': {
+                'module': 'user',
+                'args': 'name={} password={} update_password=always'.format(
+                    self.username, encrypt_password(password, salt="K3mIlKK")
+                ),
+            }
+        })
+        return tasks
 
     def __str__(self):
         return self.name
@@ -237,6 +254,13 @@ class ChangePasswordOneAssetTaskHistory(ChangePasswordAssetModelMixin):
         ordering = ['-date_start']
 
     @property
+    def old_password(self):
+        if self._old_password:
+            return signer.unsign(self._old_password)
+        else:
+            return None
+
+    @property
     def password(self):
         if self._password:
             return signer.unsign(self._password)
@@ -245,4 +269,6 @@ class ChangePasswordOneAssetTaskHistory(ChangePasswordAssetModelMixin):
 
     @password.setter
     def password(self, password_raw):
+        self._old_password = self._password
         self._password = signer.sign(password_raw)
+
