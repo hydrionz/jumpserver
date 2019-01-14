@@ -4,7 +4,6 @@
 
 import uuid
 import time
-import json
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import ugettext as _
@@ -16,7 +15,7 @@ from assets.models.utils import private_key_validator
 from ..inventory import JMSInventory
 from ..ansible import AdHocRunner, AnsibleError
 from common.utils import get_logger, get_signer, random_password_gen, \
-    encrypt_password
+    encrypt_password, get_object_or_none
 
 logger = get_logger(__file__)
 signer = get_signer()
@@ -101,8 +100,16 @@ class ChangePasswordAssetTask(OrgModelMixin):
         else:
             return self._run_subtask_only(host)
 
+    def get_or_create_subtask_history(self, host):
+        history = get_object_or_none(ChangePasswordOneAssetTaskHistory,
+                                     task=self, asset=host)
+        if history is None:
+            history = ChangePasswordOneAssetTaskHistory(task=self, asset=host)
+
+        return history
+
     def _run_subtask_and_record(self, host):
-        history = ChangePasswordOneAssetTaskHistory(task=self, asset=host)
+        history = self.get_or_create_subtask_history(host)
         time_start = time.time()
         try:
             history.date_start = timezone.now()
@@ -240,6 +247,10 @@ class ChangePasswordAssetTaskHistory(ChangePasswordAssetModelMixin):
 
     class Meta:
         ordering = ['-date_start']
+        get_latest_by = 'date_created'
+
+    def __str__(self):
+        return 'history:{}'.format(self.task)
 
 
 class ChangePasswordOneAssetTaskHistory(ChangePasswordAssetModelMixin):
@@ -252,6 +263,11 @@ class ChangePasswordOneAssetTaskHistory(ChangePasswordAssetModelMixin):
 
     class Meta:
         ordering = ['-date_start']
+        get_latest_by = 'date_created'
+        unique_together = [('task', 'asset')]
+
+    def __str__(self):
+        return '{}:{}'.format(self.task, self.asset)
 
     @property
     def old_password(self):
