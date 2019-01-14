@@ -146,6 +146,14 @@ def timesince(dt, since='', default="just now"):
     return default
 
 
+def random_password_gen(length=20):
+    import random
+    import string
+    chars = string.ascii_letters + string.digits
+    password = ''.join([random.choice(chars) for _ in range(length)])
+    return password
+
+
 def ssh_key_string_to_obj(text, password=None):
     key = None
     try:

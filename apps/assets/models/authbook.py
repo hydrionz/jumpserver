@@ -33,6 +33,16 @@ class AuthBook(AssetUser):
             logger.debug("Get auth info from AuthBook success")
             return item
 
+    @classmethod
+    def create_item(cls, username, password, asset):
+        item = cls.objects.create(
+            name='{}@{}'.format(username, asset),
+            username=username, asset=asset
+        )
+        item.set_auth(password=password)
+        logger.debug('Create auth book item {}@{}'.format(username, asset))
+        return item
+
     def __str__(self):
         return '{}@{}'.format(self.username, self.asset)
 
