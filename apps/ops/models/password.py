@@ -262,7 +262,7 @@ class ChangePasswordOneAssetTaskHistory(ChangePasswordAssetModelMixin):
     _old_password = models.CharField(max_length=256, blank=True, null=True, verbose_name=_('Old password'))
 
     class Meta:
-        ordering = ['-date_start']
+        ordering = ['is_success', '-date_start']
         get_latest_by = 'date_created'
         unique_together = [('task', 'asset')]
 
