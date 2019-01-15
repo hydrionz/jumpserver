@@ -80,3 +80,13 @@ def hello(name, callback=None):
 def hello_callback(result):
     print(result)
     print("Hello callback")
+
+
+@shared_task
+def change_password_asset_task(tid, **kwargs):
+    from ops.models import ChangePasswordAssetTask
+    task = get_object_or_none(ChangePasswordAssetTask, id=tid)
+    if task:
+        return task.run()
+    else:
+        logger.error('No change password asset task found')
