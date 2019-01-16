@@ -2,6 +2,7 @@
 #
 
 
+import json
 import uuid
 import time
 from django.db import models
@@ -14,8 +15,9 @@ from assets.models import AuthBook
 from assets.models.utils import private_key_validator
 from ..inventory import JMSInventory
 from ..ansible import AdHocRunner, AnsibleError
-from common.utils import get_logger, get_signer, random_password_gen, \
-    encrypt_password, get_object_or_none
+from common.utils import (
+    get_logger, get_signer, random_password_gen, encrypt_password
+)
 
 logger = get_logger(__file__)
 signer = get_signer()
@@ -58,22 +60,16 @@ class ChangePasswordAssetTask(OrgModelMixin):
     def date_last_run(self):
         return self.history.all().latest().date_created
 
-    def run(self, record=True):
-        if record:
-            return self._run_and_record()
-        else:
-            return self._run_only()
-
-    def _run_and_record(self):
-        history = ChangePasswordAssetTaskHistory(task=self)
+    def run(self):
+        history = ChangePasswordAssetTaskHistory.objects.create(task=self)
+        history.task_snapshot = json.dumps(self._to_attr_json())
         time_start = time.time()
         try:
             history.date_start = timezone.now()
-            is_success = self._run_only()
+            is_success = self._run_only(history)
             history.is_success = is_success
         except Exception as e:
             history.is_success = False
-            history.reason = 'Task exception'
             logger.warning(e)
         finally:
             history.timedelta = time.time() - time_start
@@ -93,32 +89,19 @@ class ChangePasswordAssetTask(OrgModelMixin):
 
         return True, '-'
 
-    def _run_only(self):
+    def _run_only(self, history):
         hosts = clean_hosts(self.hosts.all())
         ok, reason = self._is_can_run(hosts)
         if not ok:
             return False
 
         for host in hosts:
-            self.run_subtask(host)
+            self.run_subtask(host, history)
         return True
 
-    def run_subtask(self, host, record=True):
-        if record:
-            return self._run_subtask_and_record(host)
-        else:
-            return self._run_subtask_only(host)
-
-    def get_or_create_subtask_history(self, host):
-        history = get_object_or_none(ChangePasswordOneAssetTaskHistory,
-                                     task=self, asset=host)
-        if history is None:
-            history = ChangePasswordOneAssetTaskHistory(task=self, asset=host)
-
-        return history
-
-    def _run_subtask_and_record(self, host):
-        history = self.get_or_create_subtask_history(host)
+    def run_subtask(self, host, task_history=None):
+        history, created = ChangePasswordOneAssetTaskHistory.objects.\
+            get_or_create(task_history=task_history, asset=host)
         time_start = time.time()
         try:
             history.date_start = timezone.now()
@@ -237,8 +220,8 @@ class ChangePasswordAssetTask(OrgModelMixin):
             'username': self.username,
             'hosts': [host.hostname for host in self.hosts.all()],
             'comment': self.comment,
-            'date_created': self.date_created,
-            'date_updated': self.date_updated,
+            'date_created': str(self.date_created),
+            'date_updated': str(self.date_updated),
             'create_by': self.created_by,
             'org_id': self.org_id
         }
@@ -300,5 +283,5 @@ class ChangePasswordOneAssetTaskHistory(ChangePasswordAssetTaskHistoryModelMixin
         self._password = signer.sign(password_raw)
 
     def run(self):
-        return self.task_history.task.run_subtask(self.asset)
+        return self.task_history.task.run_subtask(self.asset, self.task_history)
 
