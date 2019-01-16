@@ -3,8 +3,11 @@ from __future__ import unicode_literals
 from rest_framework import serializers
 from django.shortcuts import reverse
 
-from .models import Task, AdHoc, AdHocRunHistory, CommandExecution, \
-    ChangePasswordAssetTask
+from .models import (
+    Task, AdHoc, AdHocRunHistory, CommandExecution,
+    ChangePasswordAssetTask, ChangePasswordAssetTaskHistory,
+    ChangePasswordOneAssetTaskHistory
+)
 
 
 class CeleryResultSerializer(serializers.Serializer):
@@ -88,4 +91,8 @@ class CommandExecutionSerializer(serializers.ModelSerializer):
 class ChangePasswordAssetTaskSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChangePasswordAssetTask
-        fields = '__all__'
+        fields = [
+            'id', 'name', 'username', 'hosts', 'hosts_name', 'run_times',
+            'comment', 'date_created', 'date_updated', 'date_last_run',
+            'created_by'
+        ]

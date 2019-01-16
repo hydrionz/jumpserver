@@ -44,8 +44,19 @@ class ChangePasswordAssetTask(OrgModelMixin):
     comment = models.TextField(verbose_name=_('Comment'), blank=True)
     date_created = models.DateTimeField(auto_now_add=True, verbose_name=_('Date created'))
     date_updated = models.DateTimeField(auto_now=True)
-    date_last_run = models.DateTimeField(null=True, verbose_name=_('Date last run'))
     created_by = models.CharField(max_length=128, blank=True, verbose_name=_('Created by'))
+
+    @property
+    def hosts_name(self):
+        return [host.hostname for host in self.hosts.all().order_by('hostname')]
+
+    @property
+    def run_times(self):
+        return self.history.all().count()
+
+    @property
+    def date_last_run(self):
+        return self.history.all().latest().date_created
 
     def run(self, record=True):
         if record:
@@ -63,7 +74,7 @@ class ChangePasswordAssetTask(OrgModelMixin):
             history.reason = reason
         except Exception as e:
             history.is_success = False
-            history.reason = '-task-exception-'
+            history.reason = 'Task exception'
             logger.warning(e)
         finally:
             history.timedelta = time.time() - time_start
@@ -119,7 +130,7 @@ class ChangePasswordAssetTask(OrgModelMixin):
             history.password = password
         except Exception as e:
             logger.warning(e)
-            history.reason = '-sub-task-exception-'
+            history.reason = 'Subtask exception'
             history.is_success = False
         finally:
             history.timedelta = time.time() - time_start
@@ -237,6 +248,7 @@ class ChangePasswordAssetModelMixin(models.Model):
     date_start = models.DateTimeField(db_index=True, default=timezone.now, verbose_name=_("Date start"))
     date_finished = models.DateTimeField(blank=True, null=True, verbose_name=_('End time'))
     date_created = models.DateTimeField(auto_now_add=True, verbose_name=_('Date created'))
+    date_updated = models.DateTimeField(auto_now=True)
 
     class Meta:
         abstract = True
@@ -263,7 +275,6 @@ class ChangePasswordOneAssetTaskHistory(ChangePasswordAssetModelMixin):
 
     class Meta:
         ordering = ['is_success', '-date_start']
-        get_latest_by = 'date_created'
         unique_together = [('task', 'asset')]
 
     def __str__(self):
@@ -287,4 +298,7 @@ class ChangePasswordOneAssetTaskHistory(ChangePasswordAssetModelMixin):
     def password(self, password_raw):
         self._old_password = self._password
         self._password = signer.sign(password_raw)
+
+    def run(self):
+        return self.task.run_subtask(self.asset)
 

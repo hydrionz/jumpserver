@@ -90,3 +90,14 @@ def change_password_asset_task(tid, **kwargs):
         return task.run()
     else:
         logger.error('No change password asset task found')
+
+
+@shared_task
+def change_password_asset_task_subtask(tid, **kwargs):
+    from ops.models import ChangePasswordOneAssetTaskHistory
+    task = get_object_or_none(ChangePasswordOneAssetTaskHistory, id=tid)
+    if task:
+        return task.run()
+    else:
+        logger.error('No change password asset task subtask found')
+

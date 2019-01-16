@@ -7,8 +7,11 @@ from rest_framework.views import APIView, Response
 from common.permissions import IsOrgAdminOrAppUser
 
 from ..models import ChangePasswordAssetTask
-from ..tasks import change_password_asset_task
 from ..serializers import ChangePasswordAssetTaskSerializer
+from ..tasks import (
+    change_password_asset_task,
+    change_password_asset_task_subtask
+)
 
 
 class ChangePasswordAssetTaskViewSet(viewsets.ModelViewSet):
@@ -23,4 +26,13 @@ class ChangePasswordAssetTaskRunApi(APIView):
     def get(self, request, **kwargs):
         pk = kwargs.get('pk')
         task = change_password_asset_task.delay(pk)
+        return Response({'task': task.id})
+
+
+class ChangePasswordAssetTaskSubtaskRunApi(APIView):
+    permission_classes = (IsOrgAdminOrAppUser,)
+
+    def get(self, request, **kwargs):
+        pk = kwargs.get('pk')
+        task = change_password_asset_task_subtask.delay(pk)
         return Response({'task': task.id})
