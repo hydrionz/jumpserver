@@ -83,21 +83,21 @@ def hello_callback(result):
 
 
 @shared_task
-def change_password_asset_task(tid, **kwargs):
-    from ops.models import ChangePasswordAssetTask
-    task = get_object_or_none(ChangePasswordAssetTask, id=tid)
+def change_asset_password_task(tid, **kwargs):
+    from ops.models import ChangeAssetPasswordTask
+    task = get_object_or_none(ChangeAssetPasswordTask, id=tid)
     if task:
         return task.run()
     else:
-        logger.error('No change password asset task found')
+        logger.error('No change asset password task found')
 
 
 @shared_task
-def change_password_asset_task_subtask(tid, **kwargs):
-    from ops.models import ChangePasswordOneAssetTaskHistory
-    task = get_object_or_none(ChangePasswordOneAssetTaskHistory, id=tid)
+def change_asset_password_task_subtask(tid, **kwargs):
+    from ops.models import ChangeOneAssetPasswordTaskHistory
+    task = get_object_or_none(ChangeOneAssetPasswordTaskHistory, id=tid)
     if task:
         return task.run()
     else:
-        logger.error('No change password asset task subtask found')
+        logger.error('No change asset password task subtask found')
 

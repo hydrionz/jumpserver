@@ -5,8 +5,8 @@ from django.shortcuts import reverse
 
 from .models import (
     Task, AdHoc, AdHocRunHistory, CommandExecution,
-    ChangePasswordAssetTask, ChangePasswordAssetTaskHistory,
-    ChangePasswordOneAssetTaskHistory
+    ChangeAssetPasswordTask,
+    ChangeOneAssetPasswordTaskHistory
 )
 
 
@@ -88,11 +88,20 @@ class CommandExecutionSerializer(serializers.ModelSerializer):
         return reverse('api-ops:celery-task-log', kwargs={'pk': obj.id})
 
 
-class ChangePasswordAssetTaskSerializer(serializers.ModelSerializer):
+class ChangeAssetPasswordTaskSerializer(serializers.ModelSerializer):
     class Meta:
-        model = ChangePasswordAssetTask
+        model = ChangeAssetPasswordTask
         fields = [
             'id', 'name', 'username', 'hosts', 'hosts_name', 'run_times',
             'comment', 'date_created', 'date_updated', 'date_last_run',
             'created_by'
+        ]
+
+
+class ChangeAssetPasswordTaskSubtaskHistorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ChangeOneAssetPasswordTaskHistory
+        fields = [
+            'id', 'username', 'asset_info', 'reason', 'is_success', 'timedelta',
+            'date_start'
         ]

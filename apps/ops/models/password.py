@@ -38,7 +38,7 @@ class RunAsUser:
         }
 
 
-class ChangePasswordAssetTask(OrgModelMixin):
+class ChangeAssetPasswordTask(OrgModelMixin):
     id = models.UUIDField(default=uuid.uuid4, primary_key=True)
     name = models.CharField(max_length=128, verbose_name=_('Name'))
     username = models.CharField(max_length=128, verbose_name=_('Username'))
@@ -61,8 +61,8 @@ class ChangePasswordAssetTask(OrgModelMixin):
         return self.history.all().latest().date_created
 
     def run(self):
-        history = ChangePasswordAssetTaskHistory.objects.create(task=self)
-        history.task_snapshot = json.dumps(self._to_attr_json())
+        history = ChangeAssetPasswordTaskHistory.objects.create(task=self)
+        history.task_snapshot = self._to_attr_json()
         time_start = time.time()
         try:
             history.date_start = timezone.now()
@@ -100,7 +100,7 @@ class ChangePasswordAssetTask(OrgModelMixin):
         return True
 
     def run_subtask(self, host, task_history=None):
-        history, created = ChangePasswordOneAssetTaskHistory.objects.\
+        history, created = ChangeOneAssetPasswordTaskHistory.objects.\
             get_or_create(task_history=task_history, asset=host)
         time_start = time.time()
         try:
@@ -138,10 +138,8 @@ class ChangePasswordAssetTask(OrgModelMixin):
             is_success, reason = self.verify_password(password, host)
         else:
             is_success = False
-            msg = self.get_result_failed_msg(result, host.hostname,
-                                             'change_password')
-            reason = '{}:{}'.format('Change password', msg)
-
+            reason = self.get_result_failed_msg(result, host.hostname,
+                                                'change_password')
         return is_success, reason
 
     def verify_password(self, password, host):
@@ -153,8 +151,7 @@ class ChangePasswordAssetTask(OrgModelMixin):
             AuthBook.create_item(self.username, password, host)
         else:
             is_success = False
-            msg = self.get_result_failed_msg(result, host.hostname, 'ping')
-            reason = '{}:{}'.format('Verify password', msg)
+            reason = self.get_result_failed_msg(result, host.hostname, 'ping')
 
         return is_success, reason
 
@@ -195,9 +192,15 @@ class ChangePasswordAssetTask(OrgModelMixin):
         try:
             msg = result.results_summary.get('dark'). \
                 get(hostname).get(task_name).get('msg')
+            if 'Connection refused' in msg:
+                msg = 'Connection refused'
+            elif 'Authentication failure' in msg:
+                msg = 'Authentication failure.'
+            else:
+                msg = 'Unknown'
         except Exception as e:
             logger.debug(e)
-            return 'Unknown'
+            return 'Exception'
         else:
             return msg
 
@@ -233,7 +236,7 @@ class ChangePasswordAssetTask(OrgModelMixin):
         unique_together = [('org_id', 'name')]
 
 
-class ChangePasswordAssetTaskHistoryModelMixin(models.Model):
+class ChangeAssetPasswordTaskHistoryModelMixin(models.Model):
     id = models.UUIDField(default=uuid.uuid4, primary_key=True)
     is_success = models.BooleanField(default=False, verbose_name=_('Is success'))
     timedelta = models.FloatField(default=0.0, verbose_name=_('Time'), null=True)
@@ -246,22 +249,55 @@ class ChangePasswordAssetTaskHistoryModelMixin(models.Model):
         abstract = True
 
 
-class ChangePasswordAssetTaskHistory(ChangePasswordAssetTaskHistoryModelMixin):
-    task = models.ForeignKey(ChangePasswordAssetTask, related_name='history', on_delete=models.CASCADE)
-    task_snapshot = models.TextField(verbose_name=_("Task snapshot"))
+class ChangeAssetPasswordTaskHistory(ChangeAssetPasswordTaskHistoryModelMixin):
+    task = models.ForeignKey(ChangeAssetPasswordTask, related_name='history', on_delete=models.CASCADE)
+    _task_snapshot = models.TextField(verbose_name=_("Task snapshot"))
+
+    @property
+    def task_snapshot(self):
+        return json.loads(self._task_snapshot)
+
+    @task_snapshot.setter
+    def task_snapshot(self, item):
+        self._task_snapshot = json.dumps(item)
+
+    @property
+    def total_result(self):
+        subtask_historys = self.subtask_history.all()
+        total_hosts = subtask_historys.count()
+        total_success_hosts = subtask_historys.filter(is_success=True).count()
+        total_failed_hosts = subtask_historys.filter(is_success=False).count()
+        return {
+            'total_hosts': total_hosts,
+            'total_success_hosts': total_success_hosts,
+            'total_failed_hosts': total_failed_hosts
+        }
 
     class Meta:
         get_latest_by = 'date_updated'
 
 
-class ChangePasswordOneAssetTaskHistory(ChangePasswordAssetTaskHistoryModelMixin):
-    task_history = models.ForeignKey(ChangePasswordAssetTaskHistory, related_name='subtask_history', on_delete=models.CASCADE)
-    asset = models.ForeignKey('assets.Asset', related_name='change_password_asset_history', on_delete=models.CASCADE)
+class ChangeOneAssetPasswordTaskHistory(ChangeAssetPasswordTaskHistoryModelMixin):
+    task_history = models.ForeignKey(ChangeAssetPasswordTaskHistory, related_name='subtask_history', on_delete=models.CASCADE)
+    asset = models.ForeignKey('assets.Asset', related_name='password_change_history', on_delete=models.CASCADE)
     _password = models.CharField(max_length=256, blank=True, null=True, verbose_name=_('Password'))
     _public_key = models.TextField(max_length=4096, blank=True, verbose_name=_('SSH public key'))
     _private_key = models.TextField(max_length=4096, blank=True, null=True, verbose_name=_('SSH private key'), validators=[private_key_validator, ])
     _old_password = models.CharField(max_length=256, blank=True, null=True, verbose_name=_('Old password'))
     reason = models.CharField(max_length=128, default='-', blank=True, verbose_name=_('Reason'))
+
+    @property
+    def username(self):
+        return self.task_history.task_snapshot.get('username')
+
+    @property
+    def asset_info(self):
+        return {
+            'id': self.asset.id,
+            'hostname': self.asset.hostname,
+            'ip': self.asset.ip,
+            'port': self.asset.port
+        }
 
     @property
     def old_password(self):
