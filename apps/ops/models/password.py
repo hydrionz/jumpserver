@@ -69,9 +69,8 @@ class ChangePasswordAssetTask(OrgModelMixin):
         time_start = time.time()
         try:
             history.date_start = timezone.now()
-            is_success, reason = self._run_only()
+            is_success = self._run_only()
             history.is_success = is_success
-            history.reason = reason
         except Exception as e:
             history.is_success = False
             history.reason = 'Task exception'
@@ -98,12 +97,11 @@ class ChangePasswordAssetTask(OrgModelMixin):
         hosts = clean_hosts(self.hosts.all())
         ok, reason = self._is_can_run(hosts)
         if not ok:
-            return False, reason
+            return False
 
         for host in hosts:
             self.run_subtask(host)
-
-        return True, reason
+        return True
 
     def run_subtask(self, host, record=True):
         if record:
@@ -233,6 +231,18 @@ class ChangePasswordAssetTask(OrgModelMixin):
         })
         return tasks
 
+    def _to_attr_json(self):
+        return {
+            'name': self.name,
+            'username': self.username,
+            'hosts': [host.hostname for host in self.hosts.all()],
+            'comment': self.comment,
+            'date_created': self.date_created,
+            'date_updated': self.date_updated,
+            'create_by': self.created_by,
+            'org_id': self.org_id
+        }
+
     def __str__(self):
         return self.name
 
@@ -240,10 +250,9 @@ class ChangePasswordAssetTask(OrgModelMixin):
         unique_together = [('org_id', 'name')]
 
 
-class ChangePasswordAssetModelMixin(models.Model):
+class ChangePasswordAssetTaskHistoryModelMixin(models.Model):
     id = models.UUIDField(default=uuid.uuid4, primary_key=True)
     is_success = models.BooleanField(default=False, verbose_name=_('Is success'))
-    reason = models.CharField(max_length=128, default='-', blank=True, verbose_name=_('Reason'))
     timedelta = models.FloatField(default=0.0, verbose_name=_('Time'), null=True)
     date_start = models.DateTimeField(db_index=True, default=timezone.now, verbose_name=_("Date start"))
     date_finished = models.DateTimeField(blank=True, null=True, verbose_name=_('End time'))
@@ -254,31 +263,22 @@ class ChangePasswordAssetModelMixin(models.Model):
         abstract = True
 
 
-class ChangePasswordAssetTaskHistory(ChangePasswordAssetModelMixin):
+class ChangePasswordAssetTaskHistory(ChangePasswordAssetTaskHistoryModelMixin):
     task = models.ForeignKey(ChangePasswordAssetTask, related_name='history', on_delete=models.CASCADE)
+    task_snapshot = models.TextField(verbose_name=_("Task snapshot"))
 
     class Meta:
-        ordering = ['-date_start']
-        get_latest_by = 'date_created'
-
-    def __str__(self):
-        return 'history:{}'.format(self.task)
+        get_latest_by = 'date_updated'
 
 
-class ChangePasswordOneAssetTaskHistory(ChangePasswordAssetModelMixin):
-    task = models.ForeignKey(ChangePasswordAssetTask, related_name='history_subtask', on_delete=models.CASCADE)
-    asset = models.ForeignKey('assets.Asset', related_name='history_change_password', on_delete=models.CASCADE)
+class ChangePasswordOneAssetTaskHistory(ChangePasswordAssetTaskHistoryModelMixin):
+    task_history = models.ForeignKey(ChangePasswordAssetTaskHistory, related_name='subtask_history', on_delete=models.CASCADE)
+    asset = models.ForeignKey('assets.Asset', related_name='change_password_asset_history', on_delete=models.CASCADE)
     _password = models.CharField(max_length=256, blank=True, null=True, verbose_name=_('Password'))
     _public_key = models.TextField(max_length=4096, blank=True, verbose_name=_('SSH public key'))
     _private_key = models.TextField(max_length=4096, blank=True, null=True, verbose_name=_('SSH private key'), validators=[private_key_validator, ])
     _old_password = models.CharField(max_length=256, blank=True, null=True, verbose_name=_('Old password'))
-
-    class Meta:
-        ordering = ['is_success', '-date_start']
-        unique_together = [('task', 'asset')]
-
-    def __str__(self):
-        return '{}:{}'.format(self.task, self.asset)
+    reason = models.CharField(max_length=128, default='-', blank=True, verbose_name=_('Reason'))
 
     @property
     def old_password(self):
@@ -300,5 +300,5 @@ class ChangePasswordOneAssetTaskHistory(ChangePasswordAssetModelMixin):
         self._password = signer.sign(password_raw)
 
     def run(self):
-        return self.task.run_subtask(self.asset)
+        return self.task_history.task.run_subtask(self.asset)
 
