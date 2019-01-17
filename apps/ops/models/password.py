@@ -195,7 +195,7 @@ class ChangeAssetPasswordTask(OrgModelMixin):
             if 'Connection refused' in msg:
                 msg = 'Connection refused'
             elif 'Authentication failure' in msg:
-                msg = 'Authentication failure.'
+                msg = 'Authentication failure'
             else:
                 msg = 'Unknown'
         except Exception as e:
@@ -262,16 +262,17 @@ class ChangeAssetPasswordTaskHistory(ChangeAssetPasswordTaskHistoryModelMixin):
         self._task_snapshot = json.dumps(item)
 
     @property
-    def total_result(self):
-        subtask_historys = self.subtask_history.all()
-        total_hosts = subtask_historys.count()
-        total_success_hosts = subtask_historys.filter(is_success=True).count()
-        total_failed_hosts = subtask_historys.filter(is_success=False).count()
-        return {
-            'total_hosts': total_hosts,
-            'total_success_hosts': total_success_hosts,
-            'total_failed_hosts': total_failed_hosts
-        }
+    def total_hosts(self):
+        return self.subtask_history.all().count()
+
+    @property
+    def total_success_hosts(self):
+        return self.subtask_history.all().filter(is_success=True).count()
+
+    @property
+    def total_failed_hosts(self):
+        return self.subtask_history.all().filter(is_success=False).count()
+
 
     class Meta:
         get_latest_by = 'date_updated'

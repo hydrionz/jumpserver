@@ -8,10 +8,10 @@ from rest_framework.pagination import LimitOffsetPagination
 from common.utils import get_object_or_none
 from common.permissions import IsOrgAdminOrAppUser
 
-from ..models import ChangeAssetPasswordTask
+from ..models import ChangeAssetPasswordTask, ChangeAssetPasswordTaskHistory
 from ..serializers import (
     ChangeAssetPasswordTaskSerializer,
-    ChangeAssetPasswordTaskSubtaskHistorySerializer
+    ChangeAssetPasswordTaskHistoryDetailSerializer,
 )
 from ..tasks import (
     change_asset_password_task, change_asset_password_task_subtask
@@ -42,9 +42,9 @@ class ChangeAssetPasswordTaskSubtaskRunApi(APIView):
         return Response({'task': task.id})
 
 
-class ChangeAssetPasswordTaskHistoryLatestSubtaskHistoryListApi(generics.ListAPIView):
+class ChangeAssetPasswordTaskHistoryLatestDetailApi(generics.ListAPIView):
     permission_classes = (IsOrgAdminOrAppUser,)
-    serializer_class = ChangeAssetPasswordTaskSubtaskHistorySerializer
+    serializer_class = ChangeAssetPasswordTaskHistoryDetailSerializer
     pagination_class = LimitOffsetPagination
     http_method_names = ['get']
 
@@ -59,4 +59,19 @@ class ChangeAssetPasswordTaskHistoryLatestSubtaskHistoryListApi(generics.ListAPI
             return history
 
         history = history.latest()
+        return history.subtask_history.all().order_by('is_success')
+
+
+class ChangeAssetPasswordTaskHistoryDetailApi(generics.ListAPIView):
+    permission_classes = (IsOrgAdminOrAppUser,)
+    serializer_class = ChangeAssetPasswordTaskHistoryDetailSerializer
+    pagination_class = LimitOffsetPagination
+    http_method_names = ['get']
+
+    def get_object(self):
+        pk = self.kwargs.get('pk')
+        return get_object_or_none(ChangeAssetPasswordTaskHistory, pk=pk)
+
+    def get_queryset(self):
+        history = self.get_object()
         return history.subtask_history.all().order_by('is_success')

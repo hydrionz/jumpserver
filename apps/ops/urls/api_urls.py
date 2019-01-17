@@ -26,14 +26,15 @@ urlpatterns = [
     path('change-asset-password-task/<uuid:pk>/run/',
          api.ChangeAssetPasswordTaskRunApi.as_view(),
          name='change-asset-password-task-run'),
-
     path('change-asset-password-task/subtask/<uuid:pk>/run/',
          api.ChangeAssetPasswordTaskSubtaskRunApi.as_view(),
          name='change-asset-password-task-subtask-run'),
-
-    path('change-asset-password-task/<uuid:pk>/history/latest/subtask/history/',
-         api.ChangeAssetPasswordTaskHistoryLatestSubtaskHistoryListApi.as_view(),
-         name='change-asset-password-task-latest-subtask-history-list'),
+    path('change-asset-password-task/<uuid:pk>/history/latest/detail/',
+         api.ChangeAssetPasswordTaskHistoryLatestDetailApi.as_view(),
+         name='change-asset-password-task-latest-history-detail'),
+    path('change-asset-password-task/history/<uuid:pk>/detail/',
+         api.ChangeAssetPasswordTaskHistoryDetailApi.as_view(),
+         name='change-asset-password-task-history-detail'),
 ]
 
 urlpatterns += router.urls

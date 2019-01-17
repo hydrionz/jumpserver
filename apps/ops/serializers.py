@@ -98,7 +98,7 @@ class ChangeAssetPasswordTaskSerializer(serializers.ModelSerializer):
         ]
 
 
-class ChangeAssetPasswordTaskSubtaskHistorySerializer(serializers.ModelSerializer):
+class ChangeAssetPasswordTaskHistoryDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChangeOneAssetPasswordTaskHistory
         fields = [
