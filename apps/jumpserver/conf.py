@@ -340,6 +340,7 @@ defaults = {
     'RADIUS_SECRET': '',
     'HTTP_BIND_HOST': '0.0.0.0',
     'HTTP_LISTEN_PORT': 8080,
+    'CREDENTIAL_BACKEND_VAULT': False,
 }
 
 
