@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import generics
@@ -21,8 +22,8 @@ from rest_framework_bulk import BulkModelViewSet
 from rest_framework.pagination import LimitOffsetPagination
 
 from common.mixins import IDInFilterMixin
-from common.utils import get_logger
-from ..hands import IsOrgAdmin
+from common.utils import get_logger, get_object_or_none
+from ..hands import IsOrgAdmin, IsOrgAdminOrAppUser
 from ..models import AdminUser, Asset
 from .. import serializers
 from ..tasks import test_admin_user_connectivity_manual
@@ -30,9 +31,8 @@ from ..tasks import test_admin_user_connectivity_manual
 
 logger = get_logger(__file__)
 __all__ = [
-    'AdminUserViewSet', 'ReplaceNodesAdminUserApi',
-    'AdminUserTestConnectiveApi', 'AdminUserAuthApi',
-    'AdminUserAssetsListView',
+    'AdminUserViewSet', 'ReplaceNodesAdminUserApi', 'AdminUserAssetAuthInfoApi',
+    'AdminUserTestConnectiveApi', 'AdminUserAuthApi', 'AdminUserAssetsListView',
 ]
 
 
@@ -51,6 +51,34 @@ class AdminUserViewSet(IDInFilterMixin, BulkModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset().all()
         return queryset
+
+
+class AdminUserAssetAuthInfoApi(generics.RetrieveAPIView):
+    """
+    Get admin user with asset auth info (AuthBook or Vault)
+    """
+    queryset = AdminUser.objects.all()
+    serializer_class = serializers.AdminUserAuthSerializer
+    permission_classes = (IsOrgAdminOrAppUser,)
+
+    def retrieve(self, request, *args, **kwargs):
+        serializer_data = self.get_serializer_data()
+        return Response(serializer_data)
+
+    def get_serializer_data(self):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        serializer_data = copy.deepcopy(serializer.data)
+
+        auth = self.get_auth()
+        serializer_data.update(auth)
+        return serializer_data
+
+    def get_auth(self):
+        instance = self.get_object()
+        asset = get_object_or_none(Asset, pk=self.kwargs.get('aid'))
+        auth = instance.get_auth(asset)
+        return auth
 
 
 class AdminUserAuthApi(generics.UpdateAPIView):

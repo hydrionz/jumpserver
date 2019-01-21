@@ -33,6 +33,9 @@ urlpatterns = [
 
     path('admin-user/<uuid:pk>/nodes/',
          api.ReplaceNodesAdminUserApi.as_view(), name='replace-nodes-admin-user'),
+    # admin-user asset auth-info
+    path('admin-user/<uuid:pk>/assets/<uuid:aid>/auth-info/',
+         api.AdminUserAssetAuthInfoApi.as_view(), name='admin-user-asset-auth-info'),
     path('admin-user/<uuid:pk>/auth/',
          api.AdminUserAuthApi.as_view(), name='admin-user-auth'),
     path('admin-user/<uuid:pk>/connective/',
@@ -40,6 +43,9 @@ urlpatterns = [
     path('admin-user/<uuid:pk>/assets/',
          api.AdminUserAssetsListView.as_view(), name='admin-user-assets'),
 
+    # system-user asset auth-info
+    path('system-user/<uuid:pk>/assets/<uuid:aid>/auth-info/',
+         api.SystemUserAssetAuthInfoApi.as_view(), name='system-user-asset-auth-info'),
     path('system-user/<uuid:pk>/auth-info/',
          api.SystemUserAuthInfoApi.as_view(), name='system-user-auth-info'),
     path('system-user/<uuid:pk>/assets/',

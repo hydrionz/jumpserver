@@ -13,13 +13,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 from django.shortcuts import get_object_or_404
 from rest_framework import generics
 from rest_framework.response import Response
 from rest_framework_bulk import BulkModelViewSet
 from rest_framework.pagination import LimitOffsetPagination
 
-from common.utils import get_logger
+from common.utils import get_logger, get_object_or_none
 from common.permissions import IsOrgAdmin, IsOrgAdminOrAppUser
 from ..models import SystemUser, Asset
 from .. import serializers
@@ -30,7 +31,7 @@ from ..tasks import push_system_user_to_assets_manual, \
 
 logger = get_logger(__file__)
 __all__ = [
-    'SystemUserViewSet', 'SystemUserAuthInfoApi',
+    'SystemUserViewSet', 'SystemUserAuthInfoApi', 'SystemUserAssetAuthInfoApi',
     'SystemUserPushApi', 'SystemUserTestConnectiveApi',
     'SystemUserAssetsListView', 'SystemUserPushToAssetApi',
     'SystemUserTestAssetConnectivityApi', 'SystemUserCommandFilterRuleListApi',
@@ -52,6 +53,34 @@ class SystemUserViewSet(BulkModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset().all()
         return queryset
+
+
+class SystemUserAssetAuthInfoApi(generics.RetrieveAPIView):
+    """
+    Get system user with asset auth info (AuthBook or Vault)
+    """
+    queryset = SystemUser.objects.all()
+    serializer_class = serializers.SystemUserAuthSerializer
+    permission_classes = (IsOrgAdminOrAppUser,)
+
+    def retrieve(self, request, *args, **kwargs):
+        serializer_data = self.get_serializer_data()
+        return Response(serializer_data)
+
+    def get_serializer_data(self):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        serializer_data = copy.deepcopy(serializer.data)
+
+        auth = self.get_auth()
+        serializer_data.update(auth)
+        return serializer_data
+
+    def get_auth(self):
+        instance = self.get_object()
+        asset = get_object_or_none(Asset, pk=self.kwargs.get('aid'))
+        auth = instance.get_auth(asset=asset)
+        return auth
 
 
 class SystemUserAuthInfoApi(generics.RetrieveUpdateDestroyAPIView):
