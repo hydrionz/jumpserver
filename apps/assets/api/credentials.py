@@ -20,7 +20,13 @@ class CredentialsApi(APIView):
 
     def get_credentials(self):
         asset_id = self.request.GET.get('asset_id', None)
-        asset = get_object_or_none(Asset, pk=asset_id)
+        if asset_id is not None:
+            asset = get_object_or_none(Asset, pk=asset_id)
+            if asset is None:
+                return []
+        else:
+            asset = None
+
         username = self.request.GET.get('username', None)
         latest = self.is_latest()
         backend = get_credential_backend()

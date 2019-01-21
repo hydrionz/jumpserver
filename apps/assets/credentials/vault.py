@@ -7,9 +7,6 @@ from .base import CredentialBackend
 
 class VaultBackend(CredentialBackend):
 
-    def _filter_latest(self, items):
-        return None
-
     def _get_items(self, pk=None, asset=None, username=None, latest=False):
         return None
 

@@ -8,10 +8,6 @@ import abc
 class CredentialBackend(metaclass=abc.ABCMeta):
 
     @abc.abstractclassmethod
-    def _filter_latest(self, items):
-        return None
-
-    @abc.abstractclassmethod
     def _get_items(self, pk=None, asset=None, username=None, latest=False):
         return None
 
@@ -34,5 +30,6 @@ class CredentialBackend(metaclass=abc.ABCMeta):
                         comment=None, auth_info=None):
         return None
 
+    @abc.abstractclassmethod
     def _to_json(self, item, include_auth=False):
         return None
