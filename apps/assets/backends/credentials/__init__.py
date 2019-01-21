@@ -5,7 +5,7 @@
 from django.conf import settings
 
 from .vault import VaultBackend
-from .authbook import AuthBookBackend
+from .db import AuthBookBackend
 
 
 def get_credential_backend():
@@ -14,3 +14,5 @@ def get_credential_backend():
     else:
         return AuthBookBackend()
 
+
+credential_backend = get_credential_backend()

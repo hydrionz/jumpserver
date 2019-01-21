@@ -130,9 +130,8 @@ class AssetUser(OrgModelMixin):
         }
 
     def get_auth_credential(self, asset):
-        from ..credentials import get_credential_backend
-        backend = get_credential_backend()
-        auth = backend.get_auth(asset=asset, username=self.username)
+        from ..backends.credentials import credential_backend
+        auth = credential_backend.get_auth(asset=asset, username=self.username)
         if not auth:
             return self.get_auth_local()
         else:

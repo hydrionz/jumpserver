@@ -9,7 +9,7 @@ from django.utils.translation import ugettext as _
 from common.utils import get_object_or_none
 
 from ..models import Asset
-from ..credentials import get_credential_backend
+from ..backends.credentials import credential_backend
 
 
 class CredentialsApi(APIView):
@@ -29,8 +29,7 @@ class CredentialsApi(APIView):
 
         username = self.request.GET.get('username', None)
         latest = self.is_latest()
-        backend = get_credential_backend()
-        credentials = backend.get_credentials(
+        credentials = credential_backend.get_credentials(
             asset=asset, username=username, latest=latest)
         return credentials
 
@@ -71,8 +70,7 @@ class CredentialsApi(APIView):
             return {'error': error}
 
         params = self.get_params(data, asset, username)
-        backend = get_credential_backend()
-        credential = backend.post_credential(**params)
+        credential = credential_backend.post_credential(**params)
         return {'msg': _('Created succeed'), 'data': credential}
 
     @staticmethod
@@ -100,6 +98,5 @@ class CredentialsAuthInfoApi(APIView):
 
     def get_credentials(self):
         pk = self.kwargs.get('pk')
-        backend = get_credential_backend()
-        credentials = backend.get_credentials(pk=pk, include_auth=True)
+        credentials = credential_backend.get_credentials(pk=pk, include_auth=True)
         return credentials

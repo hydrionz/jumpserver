@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 #
 
-from ..models import AuthBook
+from assets.models import AuthBook
 from .base import CredentialBackend
 
 from common.utils import get_logger
