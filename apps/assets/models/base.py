@@ -162,5 +162,23 @@ class AssetUser(OrgModelMixin):
             'private_key': self.private_key_file,
         }
 
+    def _to_json(self, include_auth=False):
+        data = {
+            'id': self.id,
+            'name': self.name,
+            'username': self.username,
+            'comment': self.comment,
+            'date_created': self.date_created,
+            'date_updated': self.date_updated,
+            'created_by': self.created_by,
+            'org_id': self.org_id,
+        }
+
+        if include_auth:
+            auth = self.get_auth_local()
+            data.update(auth)
+
+        return data
+
     class Meta:
         abstract = True

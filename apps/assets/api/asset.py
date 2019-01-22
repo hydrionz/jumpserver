@@ -8,24 +8,26 @@ from rest_framework.response import Response
 from rest_framework_bulk import BulkModelViewSet
 from rest_framework_bulk import ListBulkCreateUpdateDestroyAPIView
 from rest_framework.pagination import LimitOffsetPagination
+from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
 
 from common.mixins import IDInFilterMixin
-from common.utils import get_logger
+from common.utils import get_logger, get_object_or_none
 from common.permissions import IsOrgAdmin, IsOrgAdminOrAppUser
 from ..models import Asset, AdminUser, Node
 from .. import serializers
 from ..tasks import update_asset_hardware_info_manual, \
     test_asset_connectivity_manual
 from ..utils import LabelFilter
+from .credentials import credential_backend
 
 
 logger = get_logger(__file__)
 __all__ = [
     'AssetViewSet', 'AssetListUpdateApi',
     'AssetRefreshHardwareApi', 'AssetAdminUserTestApi',
-    'AssetGatewayApi'
+    'AssetGatewayApi', 'AssetAssetUserApi', 'AssetAssetUserAuthInfoApi',
 ]
 
 
@@ -138,3 +140,76 @@ class AssetGatewayApi(generics.RetrieveAPIView):
             return Response(serializer.data)
         else:
             return Response({"msg": "Not have gateway"}, status=404)
+
+
+def get_asset_users(asset, include_auth=False):
+    users = credential_backend.get_credentials(asset=asset, latest=True,
+                                               include_auth=include_auth)
+
+    # system users #
+
+    # sorted
+    system_users = asset.systemuser_set.all().order_by('-priority',
+                                                       '-date_updated')
+    # group by username
+    system_users_dict = {}
+    for su in system_users:
+        system_users_dict[su.username] = system_users_dict.get(su.username) \
+                                         or []
+        system_users_dict[su.username].append(su)
+    # get first
+    system_users = []
+    for _, su in system_users_dict.items():
+        if su:
+            system_users.append(su[0])
+
+    # system user append credential if username not exist
+    for su in system_users:
+        if su.username == asset.admin_user.username:
+            su = asset.admin_user
+
+        if su.username not in [user.get('username') for user in users]:
+            data = su._to_json(include_auth=include_auth)
+            data.update({'asset_id': asset.id})
+            users.append(data)
+
+    return users
+
+
+def get_asset_user_auth_info(asset, username):
+    users = get_asset_users(asset, include_auth=True)
+    for user in users:
+        if user.get('username') == username:
+            return user
+    return {}
+
+
+class AssetAssetUserApi(APIView):
+    """
+    返回当前资产的所有可登录用户信息（管理用户、系统用户、credentials用户<AuthBook,Vault>）
+    """
+    permission_classes = (IsOrgAdminOrAppUser,)
+
+    def get(self, request, *args, **kwargs):
+        asset = get_object_or_none(Asset, pk=self.kwargs.get('pk'))
+        if asset is None:
+            return {'error': 'Asset is not exist.'}
+
+        users = get_asset_users(asset)
+        return Response(users)
+
+
+class AssetAssetUserAuthInfoApi(APIView):
+    """
+    返回当前资产下用户名为username的用户认证信息
+    """
+    permission_classes = (IsOrgAdminOrAppUser,)
+
+    def get(self, request, *args, **kwargs):
+        username = self.kwargs.get('username')
+        asset = get_object_or_none(Asset, pk=self.kwargs.get('pk'))
+        if asset is None:
+            return {'error': 'Asset <id: {}> is not exist.'}
+
+        user_auth_info = get_asset_user_auth_info(asset, username)
+        return Response(user_auth_info)

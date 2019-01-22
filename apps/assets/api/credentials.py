@@ -9,10 +9,12 @@ from django.utils.translation import ugettext as _
 from common.utils import get_object_or_none
 
 from ..models import Asset
+from ..hands import IsOrgAdmin
 from ..backends.credentials import credential_backend
 
 
 class CredentialsApi(APIView):
+    permission_classes = (IsOrgAdmin,)
 
     def get(self, request, *args, **kwargs):
         credentials = self.get_credentials()
@@ -91,6 +93,7 @@ class CredentialsApi(APIView):
 
 
 class CredentialsAuthInfoApi(APIView):
+    permission_classes = (IsOrgAdmin,)
 
     def get(self, request, *args, **kwargs):
         credentials = self.get_credentials()

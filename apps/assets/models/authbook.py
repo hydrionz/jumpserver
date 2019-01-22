@@ -78,12 +78,12 @@ class AuthBook(AssetUser):
             'id': self.id,
             'name': self.name,
             'username': self.username,
-            'asset_id': self.asset.id,
             'comment': self.comment,
             'date_created': self.date_created,
             'date_updated': self.date_updated,
             'created_by': self.created_by,
             'org_id': self.org_id,
+            'asset_id': self.asset.id,
         }
 
         if include_auth:
