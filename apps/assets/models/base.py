@@ -43,6 +43,12 @@ class AssetUser(OrgModelMixin):
         else:
             return None
 
+    @property
+    def get_password(self, asset=None):
+        auth = self.get_auth(asset)
+        password = auth.get('password')
+        return password
+
     @password.setter
     def password(self, password_raw):
         raise AttributeError("Using set_auth do that")
@@ -113,7 +119,21 @@ class AssetUser(OrgModelMixin):
             self.save(update_fields=update_fields)
 
     def get_auth(self, asset=None):
-        pass
+        from ..backends.credentials import credential_backend
+
+        auth = None
+        if asset is not None:
+            auth = credential_backend.get_auth(asset, self.username)
+        if not auth:
+            auth = self.get_auth_local()
+        return auth
+
+    def get_auth_local(self):
+        return {
+            'password': self.password,
+            'private_key': self.private_key,
+            'public_key': self.public_key
+        }
 
     def clear_auth(self):
         self._password = ''

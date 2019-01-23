@@ -5,7 +5,7 @@ from django.db.models.signals import post_save, m2m_changed, post_delete
 from django.dispatch import receiver
 
 from common.utils import get_logger
-from .models import Asset, SystemUser, Node
+from .models import Asset, SystemUser, Node, AuthBook
 from .tasks import update_assets_hardware_info_util, \
     test_asset_connectivity_util, push_system_user_to_assets
 
@@ -109,3 +109,10 @@ def on_node_assets_changed(sender, instance=None, **kwargs):
 def on_node_update_or_created(sender, instance=None, created=False, **kwargs):
     if instance and not created:
         instance.expire_full_value()
+
+
+@receiver(post_save, sender=AuthBook)
+def on_auth_book_created(sender, instance=None, created=False, **kwargs):
+    if created:
+        logger.debug('Receive create auth book object signal.')
+        instance.set_latest()
