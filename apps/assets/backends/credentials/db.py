@@ -9,15 +9,9 @@ from .base import CredentialBackend
 class AuthBookBackend(CredentialBackend):
 
     def get_auth(self, asset, username):
-        if asset is None or username is None:
-            return {}
-
-        instance = AuthBook.objects.filter(
-            asset=asset, username=username
-        ).latest_version().first()
-
-        auth = instance.get_auth_local()
-
+        queryset = AuthBook.objects.filter(asset=asset, username=username)
+        instance = queryset.latest_version().first()
+        auth = instance.get_auth_local() if instance else {}
         return auth
 
     def filter(self, asset=None, username=None, latest=False, include_auth=False):

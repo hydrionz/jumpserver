@@ -28,9 +28,9 @@ class AuthBook(AssetUser):
     objects = AuthBookManager.from_queryset(AuthBookQuerySet)()
 
     def set_latest(self):
-        instance = self.__class__.objects.filter(
-            username=self.username, asset=self.asset
-        ).latest_version().first()
+        queryset = self.__class__.objects.filter(username=self.username,
+                                                 asset=self.asset)
+        instance = queryset.latest_version().first()
         if instance:
             instance.is_latest = False
             instance.save()
