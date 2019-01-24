@@ -197,6 +197,7 @@ class Asset(OrgModelMixin):
 
     def get_auth_info(self):
         if self.admin_user:
+            self.admin_user.get_asset_auth(self)
             return {
                 'username': self.admin_user.username,
                 'password': self.admin_user.password,
@@ -232,7 +233,7 @@ class Asset(OrgModelMixin):
         """
         data = self.to_json()
         if self.admin_user:
-            admin_user = self.admin_user
+            admin_user = self.admin_user.get_asset_auth(self)
             data.update({
                 'username': admin_user.username,
                 'password': admin_user.password,

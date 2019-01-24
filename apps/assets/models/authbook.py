@@ -27,9 +27,13 @@ class AuthBook(AssetUser):
 
     objects = AuthBookManager.from_queryset(AuthBookQuerySet)()
 
+    def __str__(self):
+        return '{}@{}'.format(self.username, self.asset)
+
     def set_latest(self):
-        queryset = self.__class__.objects.filter(username=self.username,
-                                                 asset=self.asset)
+        queryset = self.__class__.objects.filter(
+            username=self.username, asset=self.asset
+        )
         instance = queryset.latest_version().first()
         if instance:
             instance.is_latest = False
@@ -37,9 +41,3 @@ class AuthBook(AssetUser):
 
         self.is_latest = True
         self.save()
-
-    def __str__(self):
-        return '{}@{}'.format(self.username, self.asset)
-
-    class Meta:
-        get_latest_by = 'date_updated'
