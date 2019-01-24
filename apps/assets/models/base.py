@@ -43,16 +43,10 @@ class AssetUser(OrgModelMixin):
         else:
             return None
 
-    @property
-    def get_password(self, asset=None):
-        auth = self.get_auth(asset)
-        password = auth.get('password')
-        return password
-
     @password.setter
     def password(self, password_raw):
-        raise AttributeError("Using set_auth do that")
-        # self._password = signer.sign(password_raw)
+        # raise AttributeError("Using set_auth do that")
+        self._password = signer.sign(password_raw)
 
     @property
     def private_key(self):
@@ -61,8 +55,8 @@ class AssetUser(OrgModelMixin):
 
     @private_key.setter
     def private_key(self, private_key_raw):
-        raise AttributeError("Using set_auth do that")
-        # self._private_key = signer.sign(private_key_raw)
+        # raise AttributeError("Using set_auth do that")
+        self._private_key = signer.sign(private_key_raw)
 
     @property
     def private_key_obj(self):
@@ -94,6 +88,11 @@ class AssetUser(OrgModelMixin):
         else:
             return None
 
+    @public_key.setter
+    def public_key(self, public_key_raw):
+        # raise AttributeError("Using set_auth do that")
+        self._public_key = signer.sign(public_key_raw)
+
     @property
     def public_key_obj(self):
         if self.public_key:
@@ -118,22 +117,21 @@ class AssetUser(OrgModelMixin):
         if update_fields:
             self.save(update_fields=update_fields)
 
-    def get_auth(self, asset=None):
+    def get_asset_auth(self, asset):
         from ..backends.credentials import credential_backend
+        auth = credential_backend.get(asset, self.username)
+        self._merge_auth(auth)
+        return self
 
-        auth = None
-        if asset is not None:
-            auth = credential_backend.get_auth(asset, self.username)
-        if not auth:
-            auth = self.get_auth_local()
-        return auth
-
-    def get_auth_local(self):
-        return {
-            'password': self.password,
-            'private_key': self.private_key,
-            'public_key': self.public_key
-        }
+    def _merge_auth(self, other):
+        if not other:
+            return
+        if other.password:
+            self.password = other.password
+        if other.public_key:
+            self.public_key = other.public_key
+        if other.private_key:
+            self.private_key = other.private_key
 
     def clear_auth(self):
         self._password = ''

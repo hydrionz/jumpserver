@@ -7,7 +7,12 @@ import abc
 class CredentialBackend(object):
 
     @abc.abstractclassmethod
-    def get_auth(self, asset, username):
+    def get(self, asset, username):
+        """
+        :param asset: Asset object
+        :param username: str
+        :return: AuthBook object
+        """
         return None
 
     @abc.abstractclassmethod
