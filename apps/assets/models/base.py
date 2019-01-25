@@ -117,7 +117,7 @@ class AssetUser(OrgModelMixin):
         if update_fields:
             self.save(update_fields=update_fields)
 
-    def get_asset_auth(self, asset):
+    def load_related_asset_auth(self, asset):
         from ..backends.credentials import credential_backend
         auth = credential_backend.get(asset, self.username)
         self._merge_auth(auth)

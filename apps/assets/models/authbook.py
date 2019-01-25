@@ -31,13 +31,14 @@ class AuthBook(AssetUser):
         return '{}@{}'.format(self.username, self.asset)
 
     def set_latest(self):
-        queryset = self.__class__.objects.filter(
-            username=self.username, asset=self.asset
-        )
-        instance = queryset.latest_version().first()
+        self._remove_latest()
+        self.is_latest = True
+        self.save()
+
+    def _remove_latest(self):
+        instance = self.__class__.objects.filter(
+            username=self.username, asset=self.asset,
+        ).latest_version().first()
         if instance:
             instance.is_latest = False
             instance.save()
-
-        self.is_latest = True
-        self.save()
