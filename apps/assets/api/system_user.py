@@ -30,7 +30,7 @@ from ..tasks import push_system_user_to_assets_manual, \
 
 logger = get_logger(__file__)
 __all__ = [
-    'SystemUserViewSet', 'SystemUserAuthInfoApi',
+    'SystemUserViewSet', 'SystemUserAuthInfoApi', 'SystemUserAssetAuthInfoApi',
     'SystemUserPushApi', 'SystemUserTestConnectiveApi',
     'SystemUserAssetsListView', 'SystemUserPushToAssetApi',
     'SystemUserTestAssetConnectivityApi', 'SystemUserCommandFilterRuleListApi',
@@ -66,6 +66,18 @@ class SystemUserAuthInfoApi(generics.RetrieveUpdateDestroyAPIView):
         instance = self.get_object()
         instance.clear_auth()
         return Response(status=204)
+
+
+class SystemUserAssetAuthInfoApi(generics.RetrieveAPIView):
+    queryset = SystemUser.objects.all()
+    permission_classes = (IsOrgAdminOrAppUser,)
+    serializer_class = serializers.SystemUserAuthSerializer
+
+    def get_object(self):
+        obj = super().get_object()
+        asset = get_object_or_404(Asset, pk=self.kwargs.get('aid'))
+        obj.load_related_asset_auth(asset)
+        return obj
 
 
 class SystemUserPushApi(generics.RetrieveAPIView):

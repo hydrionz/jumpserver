@@ -40,6 +40,8 @@ urlpatterns = [
     path('admin-user/<uuid:pk>/assets/',
          api.AdminUserAssetsListView.as_view(), name='admin-user-assets'),
 
+    path('system-user/<uuid:pk>/assets/<uuid:aid>/auth-info/',
+         api.SystemUserAssetAuthInfoApi.as_view(), name='system-user-asset-auth-info'),
     path('system-user/<uuid:pk>/auth-info/',
          api.SystemUserAuthInfoApi.as_view(), name='system-user-auth-info'),
     path('system-user/<uuid:pk>/assets/',
