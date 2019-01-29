@@ -364,16 +364,19 @@ def push_system_user_util(system_user, assets, task_name):
         logger.info(msg)
         return
 
-    tasks = get_push_system_user_tasks(system_user)
     hosts = clean_hosts(assets)
     if not hosts:
         return {}
-    task, created = update_or_create_ansible_task(
-        task_name=task_name, hosts=hosts, tasks=tasks, pattern='all',
-        options=const.TASK_OPTIONS, run_as_admin=True,
-        created_by=system_user.org_id,
-    )
-    return task.run()
+
+    for host in hosts:
+        system_user.load_related_asset_auth(host)
+        tasks = get_push_system_user_tasks(system_user)
+        task, created = update_or_create_ansible_task(
+            task_name=task_name, hosts=[host], tasks=tasks, pattern='all',
+            options=const.TASK_OPTIONS, run_as_admin=True,
+            created_by=system_user.org_id,
+        )
+        task.run()
 
 
 @shared_task
@@ -416,7 +419,3 @@ def test_admin_user_connectability_period():
 # def push_system_user_period():
 #     for system_user in SystemUser.objects.all():
 #         push_system_user_related_nodes(system_user)
-
-
-
-
