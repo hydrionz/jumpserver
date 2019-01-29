@@ -13,8 +13,21 @@ class AuthBookBackend(CredentialBackend):
         instance = queryset.latest_version().first()
         return instance
 
-    def filter(self, asset=None, username=None, latest=False, include_auth=False):
-        return None
+    def filter(self, asset=None, username=None, latest=False):
+        queryset = AuthBook.objects.all()
+        if asset:
+            queryset = queryset.filter(asset=asset)
+        if username:
+            queryset = queryset.filter(username=username)
+        if latest:
+            queryset = queryset.latest_version()
+        return queryset
 
-    def create(self, asset, username, auth_info):
-        return None
+    def create(self, name, asset, username, comment, org_id,
+               password=None, public_key=None, private_key=None):
+        obj = AuthBook.objects.create(
+            name=name, asset=asset, username=username,
+            comment=comment, org_id=org_id
+        )
+        obj.set_auth(password, private_key, public_key)
+        return obj

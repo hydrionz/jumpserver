@@ -39,6 +39,7 @@ class AuthBook(AssetUser):
         instance = self.__class__.objects.filter(
             username=self.username, asset=self.asset,
         ).latest_version().first()
+
         if instance:
             instance.is_latest = False
             instance.save()

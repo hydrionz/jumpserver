@@ -16,6 +16,7 @@ router.register(r'labels', api.LabelViewSet, 'label')
 router.register(r'nodes', api.NodeViewSet, 'node')
 router.register(r'domain', api.DomainViewSet, 'domain')
 router.register(r'gateway', api.GatewayViewSet, 'gateway')
+router.register(r'credentials', api.CredentialViewSet, 'credential')
 router.register(r'cmd-filter', api.CommandFilterViewSet, 'cmd-filter')
 
 cmd_filter_router = routers.NestedDefaultRouter(router, r'cmd-filter', lookup='filter')
