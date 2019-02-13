@@ -9,12 +9,13 @@ from .base import CredentialBackend
 class AuthBookBackend(CredentialBackend):
 
     def get(self, pk=None, asset=None, username=None):
-        instance = None
         if pk:
             instance = AuthBook.objects.filter(id=pk).first()
-        if asset and username:
+        elif asset and username:
             queryset = AuthBook.objects.filter(asset=asset, username=username)
             instance = queryset.latest_version().first()
+        else:
+            instance = None
         return instance
 
     def filter(self, asset=None, username=None, latest=False):
@@ -29,6 +30,7 @@ class AuthBookBackend(CredentialBackend):
 
     def create(self, name, asset, username, comment, org_id,
                password=None, public_key=None, private_key=None):
+
         obj = AuthBook.objects.create(
             name=name, asset=asset, username=username,
             comment=comment, org_id=org_id

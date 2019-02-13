@@ -7,8 +7,9 @@ import abc
 class CredentialBackend(object):
 
     @abc.abstractclassmethod
-    def get(self, asset, username):
+    def get(self, pk, asset, username):
         """
+        :param pk:
         :param asset: Asset object
         :param username: str
         :return: AuthBook object
@@ -16,7 +17,7 @@ class CredentialBackend(object):
         return None
 
     @abc.abstractclassmethod
-    def filter(self, asset=None, username=None, latest=True):
+    def filter(self, asset=None, username=None, latest=False):
         """
         :param asset:
         :param username:

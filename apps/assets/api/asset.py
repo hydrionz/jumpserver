@@ -150,15 +150,22 @@ class AssetUserListApi(generics.ListAPIView):
 
     def get_queryset(self):
         asset = self.get_object()
-        return asset.get_asset_users()
+        if not asset:
+            return []
+        else:
+            return asset.get_asset_users()
 
 
 class AssetUserAuthInfoApi(generics.RetrieveAPIView):
+    queryset = Asset.objects.all()
     permission_classes = (IsOrgAdminOrAppUser,)
     serializer_class = serializers.AssetUserAuthInfoSerializers
 
     def get_object(self):
-        asset = get_object_or_404(Asset, pk=self.kwargs.get('pk'))
+        asset = super().get_object()
         if not asset:
             return None
-        return asset.get_asset_user(username=self.kwargs.get('username'))
+        else:
+            username = self.kwargs.get('username')
+            asset_user = asset.get_asset_user(username=username)
+            return asset_user

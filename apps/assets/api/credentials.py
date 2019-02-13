@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 #
 
-from rest_framework import viewsets
-from rest_framework import status, generics
+from rest_framework import viewsets, generics, status
 from rest_framework.response import Response
 
 from common.permissions import IsOrgAdminOrAppUser
@@ -29,10 +28,10 @@ class CredentialViewSet(viewsets.GenericViewSet):
         return Response(serializer.data)
 
     def get_queryset(self):
+        username = self.request.GET.get('username', None)
+        latest = self.request.GET.get('latest') == '1'
         asset_id = self.request.GET.get('asset_id', None)
         asset = get_object_or_none(Asset, pk=asset_id)
-        username = self.request.GET.get('username', None)
-        latest = True if self.request.GET.get('latest') == '1' else False
 
         queryset = credential_backend.filter(
             asset=asset, username=username, latest=latest
@@ -45,5 +44,6 @@ class CredentialAuthInfoApi(generics.RetrieveAPIView):
     permission_classes = (IsOrgAdminOrAppUser,)
 
     def get_object(self):
-        instance = credential_backend.get(pk=self.kwargs.get('pk'))
+        pk = self.kwargs.get('pk')
+        instance = credential_backend.get(pk=pk)
         return instance

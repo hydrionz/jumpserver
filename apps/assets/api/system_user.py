@@ -74,8 +74,9 @@ class SystemUserAssetAuthInfoApi(generics.RetrieveAPIView):
     serializer_class = serializers.SystemUserAuthSerializer
 
     def get_object(self):
+        aid = self.kwargs.get('aid')
+        asset = get_object_or_404(Asset, pk=aid)
         obj = super().get_object()
-        asset = get_object_or_404(Asset, pk=self.kwargs.get('aid'))
         obj.load_related_asset_auth(asset)
         return obj
 
