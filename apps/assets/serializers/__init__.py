@@ -9,3 +9,4 @@ from .node import *
 from .domain import *
 from .cmd_filter import *
 from .credentials import *
+from .asset_user import *

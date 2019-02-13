@@ -205,6 +205,27 @@ class Asset(OrgModelMixin):
                 'become': self.admin_user.become_info,
             }
 
+    def get_asset_users(self):
+        from ..backends.credentials import credential_backend
+        users = list()
+        # credential user
+        credential_users = credential_backend.filter(asset=self, latest=True)
+        users.extend([user for user in credential_users])
+
+        # admin user
+        if self.admin_user.username not in [user.username for user in users]:
+            users.append(self.admin_user)
+
+        # system user
+        system_users = self.systemuser_set.all()
+        for username in set([user.username for user in system_users]):
+            if username in [user.username for user in users]:
+                continue
+            system_users = system_users.filter(username=username)\
+                .order_by('-priority', '-date_updated').first()
+            users.append(system_users)
+        return users
+
     def as_node(self):
         from .node import Node
         fake_node = Node()

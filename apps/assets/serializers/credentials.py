@@ -2,9 +2,9 @@
 #
 
 from django.utils.translation import ugettext as _
+from rest_framework import serializers
 
 from ..models import AuthBook
-from rest_framework import serializers
 from ..backends.credentials import credential_backend
 
 __all__ = [

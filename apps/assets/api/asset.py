@@ -25,7 +25,7 @@ logger = get_logger(__file__)
 __all__ = [
     'AssetViewSet', 'AssetListUpdateApi',
     'AssetRefreshHardwareApi', 'AssetAdminUserTestApi',
-    'AssetGatewayApi'
+    'AssetGatewayApi', 'AssetUserListApi'
 ]
 
 
@@ -138,3 +138,16 @@ class AssetGatewayApi(generics.RetrieveAPIView):
             return Response(serializer.data)
         else:
             return Response({"msg": "Not have gateway"}, status=404)
+
+
+class AssetUserListApi(generics.ListAPIView):
+    permission_classes = (IsOrgAdminOrAppUser,)
+    serializer_class = serializers.AssetUserSerializers
+
+    def get_object(self):
+        pk = self.kwargs.get('pk')
+        return get_object_or_404(Asset, pk=pk)
+
+    def get_queryset(self):
+        asset = self.get_object()
+        return asset.get_asset_users()
