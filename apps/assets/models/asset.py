@@ -226,6 +226,12 @@ class Asset(OrgModelMixin):
             users.append(system_users)
         return users
 
+    def get_asset_user(self, username):
+        users = self.get_asset_users()
+        for user in users:
+            if user.username == username:
+                return user
+
     def as_node(self):
         from .node import Node
         fake_node = Node()

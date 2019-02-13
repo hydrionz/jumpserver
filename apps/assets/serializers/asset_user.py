@@ -12,3 +12,11 @@ class AssetUserSerializers(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'username', 'date_created', 'date_updated', 'org_id'
         ]
+
+
+class AssetUserAuthInfoSerializers(serializers.ModelSerializer):
+    class Meta:
+        model = AuthBook
+        fields = [
+            'password', 'public_key', 'private_key'
+        ]

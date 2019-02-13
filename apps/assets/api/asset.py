@@ -25,7 +25,7 @@ logger = get_logger(__file__)
 __all__ = [
     'AssetViewSet', 'AssetListUpdateApi',
     'AssetRefreshHardwareApi', 'AssetAdminUserTestApi',
-    'AssetGatewayApi', 'AssetUserListApi'
+    'AssetGatewayApi', 'AssetUserListApi', 'AssetUserAuthInfoApi',
 ]
 
 
@@ -151,3 +151,14 @@ class AssetUserListApi(generics.ListAPIView):
     def get_queryset(self):
         asset = self.get_object()
         return asset.get_asset_users()
+
+
+class AssetUserAuthInfoApi(generics.RetrieveAPIView):
+    permission_classes = (IsOrgAdminOrAppUser,)
+    serializer_class = serializers.AssetUserAuthInfoSerializers
+
+    def get_object(self):
+        asset = get_object_or_404(Asset, pk=self.kwargs.get('pk'))
+        if not asset:
+            return None
+        return asset.get_asset_user(username=self.kwargs.get('username'))
