@@ -2,7 +2,7 @@
 #
 
 from rest_framework import viewsets
-from rest_framework import status
+from rest_framework import status, generics
 from rest_framework.response import Response
 
 from common.permissions import IsOrgAdminOrAppUser
@@ -39,3 +39,11 @@ class CredentialViewSet(viewsets.GenericViewSet):
         )
         return queryset
 
+
+class CredentialAuthInfoApi(generics.RetrieveAPIView):
+    serializer_class = CredentialAuthInfoSerializer
+    permission_classes = (IsOrgAdminOrAppUser,)
+
+    def get_object(self):
+        instance = credential_backend.get(pk=self.kwargs.get('pk'))
+        return instance

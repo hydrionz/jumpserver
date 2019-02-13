@@ -54,4 +54,7 @@ class CredentialAuthInfoSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AuthBook
-        fields = '__all__'
+        fields = [
+            "id", "name", "username", "asset",
+            "password", "private_key", "public_key"
+        ]

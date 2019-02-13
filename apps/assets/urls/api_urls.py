@@ -82,6 +82,10 @@ urlpatterns = [
 
     path('gateway/<uuid:pk>/test-connective/',
          api.GatewayTestConnectionApi.as_view(), name='test-gateway-connective'),
+
+    path('credentials/<uuid:pk>/auth-info/',
+         api.CredentialAuthInfoApi.as_view(), name='credential-auth-info')
+
 ]
 
 urlpatterns += router.urls + cmd_filter_router.urls

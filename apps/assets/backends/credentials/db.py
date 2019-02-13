@@ -8,9 +8,13 @@ from .base import CredentialBackend
 
 class AuthBookBackend(CredentialBackend):
 
-    def get(self, asset, username):
-        queryset = AuthBook.objects.filter(asset=asset, username=username)
-        instance = queryset.latest_version().first()
+    def get(self, pk=None, asset=None, username=None):
+        instance = None
+        if pk:
+            instance = AuthBook.objects.filter(id=pk).first()
+        if asset and username:
+            queryset = AuthBook.objects.filter(asset=asset, username=username)
+            instance = queryset.latest_version().first()
         return instance
 
     def filter(self, asset=None, username=None, latest=False):
