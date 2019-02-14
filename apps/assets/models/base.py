@@ -119,7 +119,7 @@ class AssetUser(OrgModelMixin):
 
     def load_related_asset_auth(self, asset):
         from ..backends.credentials import credential_backend
-        instance = credential_backend.get(asset, self.username)
+        instance = credential_backend.get(asset=asset, username=self.username)
         self._merge_auth(instance)
         return self
 
