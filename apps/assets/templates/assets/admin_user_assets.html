@@ -112,8 +112,8 @@ function initTable() {
 			}},
             {targets: 4, createdCell: function (td, cellData, rowData) {
                 var test_btn = ' <a class="btn btn-xs btn-info btn-test-asset" data-aid="{{ DEFAULT_PK }}" >{% trans "Test" %}</a>'.replace("{{ DEFAULT_PK }}", cellData);
-                var setup_btn = ' <a class="btn btn-xs btn-info btn-setup-asset-auth" data-aid="{{ DEFAULT_PK }}" data-hostname="hostname777">{% trans "Setup auth" %}</a>'.replace("{{ DEFAULT_PK }}", cellData).replace("hostname777", rowData.hostname);
-                $(td).html(setup_btn + test_btn);
+                var setup_btn = ' <a class="btn btn-xs btn-primary btn-setup-asset-auth" data-aid="{{ DEFAULT_PK }}" data-hostname="hostname777">{% trans "Setup auth" %}</a>'.replace("{{ DEFAULT_PK }}", cellData).replace("hostname777", rowData.hostname);
+                $(td).html(test_btn + setup_btn);
 			}}
         ],
 
@@ -125,6 +125,15 @@ function initTable() {
 	};
 	jumpserver.initServerSideDataTable(options);
 }
+
+function initAssetAuthModalForm(hostname, username){
+    $('#id_hostname_p').html(hostname);
+    $('#id_username_p').html(username);
+    $('#id_password').parent().removeClass('has-error');
+    $('#id_password').val('');
+}
+
+var assetId;
 
 $(document).ready(function () {
 	initTable();
@@ -145,33 +154,32 @@ $(document).ready(function () {
     });
 })
 .on('click', '.btn-setup-asset-auth', function() {
-    $('#id_hostname_p').html($(this).data('hostname'));
-    $('#id_username_p').html('{{ admin_user.username }}');
-    $('#id_password').parent().removeClass('has-error');
-    $('#id_password').val('');
+    assetId = $(this).data('aid');
+    var hostname = $(this).data('hostname');
+    var username = '{{ admin_user.username }}';
+    initAssetAuthModalForm(hostname, username);
     $("#asset_auth_modal").modal();
 })
-.on('click', '#btn_asset_auth', function(){
+.on('click', '#btn_asset_auth_modal_confirm', function(){
     var password = $('#id_password').val();
     if (password){
         var data = {
-            'name': "{{ admin_user.username }}",
-            'asset': $('.btn-setup-asset-auth').data('aid'),
+            'name': "{{ admin_user.name }}",
+            'asset': assetId,
             'username': "{{ admin_user.username }}",
             'password': password
         };
-        var props = {
+        formSubmit({
             data: data,
             url: "{% url 'api-assets:credential-list' %}",
             method: 'POST',
             success: function () {
-                toastr.success("{% trans 'Set successfully!' %}");
+                toastr.success("{% trans 'Setup successfully!' %}");
             },
             error: function () {
-                toastr.error("{% trans 'Set failed' %}")
+                toastr.error("{% trans 'Setup failed!' %}");
             }
-        };
-        formSubmit(props);
+        });
         $("#asset_auth_modal").modal('hide');
     }
     else{
