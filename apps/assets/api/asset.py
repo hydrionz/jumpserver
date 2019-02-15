@@ -143,17 +143,24 @@ class AssetGatewayApi(generics.RetrieveAPIView):
 class AssetUserListApi(generics.ListAPIView):
     permission_classes = (IsOrgAdminOrAppUser,)
     serializer_class = serializers.AssetUserSerializers
+    pagination_class = LimitOffsetPagination
 
     def get_object(self):
         pk = self.kwargs.get('pk')
         return get_object_or_404(Asset, pk=pk)
 
     def get_queryset(self):
+        queryset = []
         asset = self.get_object()
-        if not asset:
-            return []
-        else:
-            return asset.get_asset_users()
+        if asset:
+            queryset = asset.get_asset_users()
+        return queryset
+
+    def filter_queryset(self, queryset):
+        search = self.request.query_params.get('search')
+        if search:
+            queryset = [q for q in queryset if search in q.username]
+        return queryset
 
 
 class AssetUserAuthInfoApi(generics.RetrieveAPIView):

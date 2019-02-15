@@ -44,20 +44,13 @@
                                     <table class="table table-hover" id="asset_user_list">
                                         <thead>
                                         <tr>
+                                            <th class="text-center"><input type="checkbox" class="ipt_check_all"></th>
                                             <th class="text-center">{% trans 'Username' %}</th>
+                                            <th class="text-center">{% trans 'Date updated' %}</th>
                                             <th class="text-center">{% trans 'Action' %}</th>
                                         </tr>
                                         </thead>
                                         <tbody>
-                                            {% for user in asset_users %}
-                                                <tr>
-                                                    <td class="text-center">{{ user.username }}</td>
-                                                    <td class="text-center">
-{#                                                        <a class="btn btn-xs btn-info btn-check-asset-auth" data-username="{{ user.username }}">{% trans 'Check auth' %}</a>#}
-                                                        <a class="btn btn-xs btn-primary btn-setup-asset-auth" data-username="{{ user.username }}">{% trans 'Setup auth' %}</a>
-                                                    </td>
-                                                </tr>
-                                            {% endfor %}
                                         </tbody>
                                     </table>
                                 </div>
@@ -79,8 +72,36 @@ function initAssetAuthModalForm(hostname){
     $('#id_password').val('');
 }
 
+function initAssetUserTable() {
+    var options = {
+        ele: $('#asset_user_list'),
+        buttons: [],
+        order: [],
+        columnDefs: [
+            {targets: 2, createdCell: function (td, cellData) {
+                $(td).html(cellData.slice(0, -6));
+             }},
+            {targets: 3, createdCell: function (td, cellData) {
+                var setup_btn = ' <a class="btn btn-xs btn-primary btn-setup-asset-auth" data-username="DEFAULT_USERNAME">{% trans "Setup auth" %}</a>'.replace("DEFAULT_USERNAME", cellData);
+                {#var check_btn = ' <a class="btn btn-xs btn-info btn-check-asset-auth" data-username="DEFAULT_USERNAME">{% trans "Check auth" %}</a>'.replace("DEFAULT_USERNAME", cellData);#}
+                $(td).html(setup_btn);
+            }}
+        ],
+        ajax_url: '{% url "api-assets:asset-users" pk=asset.id %}',
+        columns: [
+            {data: function (){return ''}},
+            {data: "username", orderable: false},
+            {data: "date_updated", orderable: false},
+            {data: "username", orderable: false}
+        ],
+        op_html: $('#actions').html()
+    };
+    jumpserver.initServerSideDataTable(options);
+}
+
 var username;
 $(document).ready(function () {
+    initAssetUserTable();
 })
 {#.on('click', '.btn-check-asset-auth', function(){#}
 {#    var the_url = "{% url 'api-assets:asset-user-auth-info' pk=asset.id username='DEFAULT_USERNAME' %}".replace('DEFAULT_USERNAME', $(this).data('username'));#}
