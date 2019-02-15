@@ -164,7 +164,7 @@ $(document).ready(function () {
     var password = $('#id_password').val();
     if (password){
         var data = {
-            'name': "{{ admin_user.name }}",
+            'name': "{{ admin_user.username }}",
             'asset': assetId,
             'username': "{{ admin_user.username }}",
             'password': password

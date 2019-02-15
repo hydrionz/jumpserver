@@ -1,0 +1,128 @@
+{% extends 'base.html' %}
+{% load common_tags %}
+{% load static %}
+{% load i18n %}
+
+{% block custom_head_css_js %}
+{% endblock %}
+
+{% block content %}
+    <div class="wrapper wrapper-content animated fadeInRight">
+        <div class="row">
+            <div class="col-sm-12">
+                <div class="ibox float-e-margins">
+                    <div class="panel-options">
+                        <ul class="nav nav-tabs">
+                            <li>
+                                <a href="{% url 'assets:asset-detail' pk=asset.id %}" class="text-center"><i class="fa fa-laptop"></i> {% trans 'Asset detail' %}</a>
+                            </li>
+                            <li class="active">
+                                <a href="{% url 'assets:asset-user' pk=asset.id %}" class="text-center"><i class="fa fa-bar-chart-o"></i> {% trans 'Asset users' %}</a>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="tab-content">
+                        <div class="col-sm-8" style="padding-left: 0;">
+                            <div class="ibox float-e-margins">
+                                <div class="ibox-title">
+                                    <span style="float: left">{% trans 'Asset users of' %} <b>{{ asset.hostname }} </b></span>
+                                    <div class="ibox-tools">
+                                        <a class="collapse-link">
+                                            <i class="fa fa-chevron-up"></i>
+                                        </a>
+                                        <a class="dropdown-toggle" data-toggle="dropdown" href="#">
+                                            <i class="fa fa-wrench"></i>
+                                        </a>
+                                        <ul class="dropdown-menu dropdown-user">
+                                        </ul>
+                                        <a class="close-link">
+                                            <i class="fa fa-times"></i>
+                                        </a>
+                                    </div>
+                                </div>
+                                <div class="ibox-content">
+                                    <table class="table table-hover" id="asset_user_list">
+                                        <thead>
+                                        <tr>
+                                            <th class="text-center">{% trans 'Username' %}</th>
+                                            <th class="text-center">{% trans 'Action' %}</th>
+                                        </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for user in asset_users %}
+                                                <tr>
+                                                    <td class="text-center">{{ user.username }}</td>
+                                                    <td class="text-center">
+{#                                                        <a class="btn btn-xs btn-info btn-check-asset-auth" data-username="{{ user.username }}">{% trans 'Check auth' %}</a>#}
+                                                        <a class="btn btn-xs btn-primary btn-setup-asset-auth" data-username="{{ user.username }}">{% trans 'Setup auth' %}</a>
+                                                    </td>
+                                                </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% include 'assets/_asset_auth_modal.html' %}
+{% endblock %}
+{% block custom_foot_js %}
+<script>
+function initAssetAuthModalForm(hostname){
+    $('#id_hostname_p').html(hostname);
+    $('#id_username_p').html(username);
+    $('#id_password').parent().removeClass('has-error');
+    $('#id_password').val('');
+}
+
+var username;
+$(document).ready(function () {
+})
+{#.on('click', '.btn-check-asset-auth', function(){#}
+{#    var the_url = "{% url 'api-assets:asset-user-auth-info' pk=asset.id username='DEFAULT_USERNAME' %}".replace('DEFAULT_USERNAME', $(this).data('username'));#}
+{#    $.ajax({#}
+{#        url: the_url,#}
+{#        method: 'GET',#}
+{#        success: function (data) {#}
+{#            alert("Password: " + data.password);#}
+{#        }#}
+{#    });#}
+{# })#}
+.on('click', '.btn-setup-asset-auth', function() {
+    username = $(this).data('username');
+    var hostname = "{{ asset.hostname }}";
+    initAssetAuthModalForm(hostname, username);
+    $("#asset_auth_modal").modal();
+})
+.on('click', '#btn_asset_auth_modal_confirm', function(){
+    var password = $('#id_password').val();
+    if (password){
+        var data = {
+            'name': username,
+            'asset': "{{ asset.id }}",
+            'username': username,
+            'password': password
+        };
+        formSubmit({
+            data: data,
+            url: "{% url 'api-assets:credential-list' %}",
+            method: 'POST',
+            success: function () {
+                toastr.success("{% trans 'Setup successfully!' %}");
+            },
+            error: function () {
+                toastr.error("{% trans 'Setup failed!' %}");
+            }
+        });
+        $("#asset_auth_modal").modal('hide');
+    }
+    else{
+        $('#id_password').parent().addClass('has-error');
+    }
+})
+</script>
+{% endblock %}

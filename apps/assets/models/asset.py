@@ -208,6 +208,7 @@ class Asset(OrgModelMixin):
     def get_asset_users(self):
         from ..backends.credentials import credential_backend
         users = list()
+
         # credential user
         credential_users = credential_backend.filter(asset=self, latest=True)
         users.extend([user for user in credential_users])
@@ -221,9 +222,12 @@ class Asset(OrgModelMixin):
         for username in set([user.username for user in system_users]):
             if username in [user.username for user in users]:
                 continue
-            system_users = system_users.filter(username=username)\
-                .order_by('-priority', '-date_updated').first()
-            users.append(system_users)
+            system_user = system_users.filter(username=username).order_by(
+                '-priority', '-date_updated'
+            ).first()
+            users.append(system_user)
+
+        users = sorted(users, key=lambda u: u.username)
         return users
 
     def get_asset_user(self, username):

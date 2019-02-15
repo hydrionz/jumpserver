@@ -37,6 +37,7 @@ __all__ = [
     'AssetListView', 'AssetCreateView', 'AssetUpdateView',
     'UserAssetListView', 'AssetBulkUpdateView', 'AssetDetailView',
     'AssetDeleteView', 'AssetExportView', 'BulkImportAssetView',
+    'AssetUserView',
 ]
 logger = get_logger(__file__)
 
@@ -174,6 +175,21 @@ class AssetDetailView(LoginRequiredMixin, DetailView):
             'app': _('Assets'),
             'action': _('Asset detail'),
             'nodes_remain': nodes_remain,
+        }
+        kwargs.update(context)
+        return super().get_context_data(**kwargs)
+
+
+class AssetUserView(AdminUserRequiredMixin, DetailView):
+    model = Asset
+    context_object_name = 'asset'
+    template_name = 'assets/asset_user.html'
+
+    def get_context_data(self, **kwargs):
+        context = {
+            'app': _('Assets'),
+            'action': _('Asset users'),
+            'asset_users': self.object.get_asset_users()
         }
         kwargs.update(context)
         return super().get_context_data(**kwargs)
