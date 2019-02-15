@@ -22,7 +22,7 @@
                         </ul>
                     </div>
                     <div class="tab-content">
-                        <div class="col-sm-8" style="padding-left: 0;">
+                        <div class="col-sm-7" style="padding-left: 0;">
                             <div class="ibox float-e-margins">
                                 <div class="ibox-title">
                                     <span style="float: left">{% trans 'Asset users of' %} <b>{{ asset.hostname }} </b></span>
@@ -46,11 +46,35 @@
                                         <tr>
                                             <th class="text-center"><input type="checkbox" class="ipt_check_all"></th>
                                             <th class="text-center">{% trans 'Username' %}</th>
+                                            <th class="text-center">{% trans 'Version count' %}</th>
                                             <th class="text-center">{% trans 'Date updated' %}</th>
                                             <th class="text-center">{% trans 'Action' %}</th>
                                         </tr>
                                         </thead>
                                         <tbody>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-5" style="padding-left: 0;padding-right: 0">
+                            <div class="panel panel-primary">
+                                <div class="panel-heading">
+                                    <i class="fa fa-info-circle"></i> {% trans 'Quick modify' %}
+                                </div>
+                                <div class="panel-body">
+                                    <table class="table">
+                                        <tbody>
+                                        {% if asset.protocol == 'ssh' %}
+                                            <tr class="no-borders-tr">
+                                                <td>{% trans 'Test connective' %}:</td>
+                                                <td>
+                                                    <span class="pull-right">
+                                                        <button type="button" class="btn btn-primary btn-xs" id="btn-test-is-alive" style="width: 54px">{% trans 'Test' %}</button>
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        {% endif %}
                                         </tbody>
                                     </table>
                                 </div>
@@ -78,10 +102,10 @@ function initAssetUserTable() {
         buttons: [],
         order: [],
         columnDefs: [
-            {targets: 2, createdCell: function (td, cellData) {
+            {targets: 3, createdCell: function (td, cellData) {
                 $(td).html(cellData.slice(0, -6));
              }},
-            {targets: 3, createdCell: function (td, cellData) {
+            {targets: 4, createdCell: function (td, cellData) {
                 var setup_btn = ' <a class="btn btn-xs btn-primary btn-setup-asset-auth" data-username="DEFAULT_USERNAME">{% trans "Setup auth" %}</a>'.replace("DEFAULT_USERNAME", cellData);
                 {#var check_btn = ' <a class="btn btn-xs btn-info btn-check-asset-auth" data-username="DEFAULT_USERNAME">{% trans "Check auth" %}</a>'.replace("DEFAULT_USERNAME", cellData);#}
                 $(td).html(setup_btn);
@@ -91,6 +115,7 @@ function initAssetUserTable() {
         columns: [
             {data: function (){return ''}},
             {data: "username", orderable: false},
+            {data: "version_count", orderable: false},
             {data: "date_updated", orderable: false},
             {data: "username", orderable: false}
         ],

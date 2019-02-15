@@ -30,7 +30,8 @@ class CredentialSerializer(serializers.ModelSerializer):
         model = AuthBook
         exclude = ('_password', '_public_key', '_private_key')
         read_only_fields = (
-            'id', 'date_created', 'date_updated', 'created_by', 'is_latest'
+            'id', 'date_created', 'date_updated', 'created_by', 'is_latest',
+            'version_count'
         )
         extra_kwargs = {
             'username': {'required': True}

@@ -10,7 +10,8 @@ class AssetUserSerializers(serializers.ModelSerializer):
     class Meta:
         model = AuthBook
         fields = [
-            'id', 'name', 'username', 'date_created', 'date_updated', 'org_id'
+            'id', 'name', 'username', 'date_created', 'date_updated', 'org_id',
+            'version_count'
         ]
 
 

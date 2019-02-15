@@ -215,6 +215,7 @@ class Asset(OrgModelMixin):
 
         # admin user
         if self.admin_user.username not in [user.username for user in users]:
+            self.admin_user.version_count = 0
             users.append(self.admin_user)
 
         # system user
@@ -225,6 +226,7 @@ class Asset(OrgModelMixin):
             system_user = system_users.filter(username=username).order_by(
                 '-priority', '-date_updated'
             ).first()
+            system_user.version_count = 0
             users.append(system_user)
 
         users = sorted(users, key=lambda u: u.username)
