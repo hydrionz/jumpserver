@@ -189,6 +189,7 @@ class DatesLoginMetricMixin:
     def get_dates_login_times_top10_users(self):
         users = self.sessions_queryset.values("user_id") \
                     .annotate(total=Count("user_id")) \
+                    .annotate(user=Max('user')) \
                     .annotate(last=Max("date_start")).order_by("-total")[:10]
         for user in users:
             user['last'] = str(user['last'])
@@ -220,7 +221,7 @@ class IndexApi(DatesLoginMetricMixin, APIView):
 
         query_params = self.request.query_params
 
-        caches = OrgResourceStatisticsCache(self.request.user.user_orgs[0])
+        caches = OrgResourceStatisticsCache(current_org)
 
         _all = query_params.get('all')
 

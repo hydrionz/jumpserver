@@ -3,8 +3,7 @@
 import re
 from rest_framework import serializers
 
-from common.drf.serializers import AdaptedBulkListSerializer
-from ..models import CommandFilter, CommandFilterRule, SystemUser
+from ..models import CommandFilter, CommandFilterRule
 from orgs.mixins.serializers import BulkOrgResourceModelSerializer
 from orgs.utils import tmp_to_root_org
 from common.utils import get_object_or_none, lazyproperty
@@ -15,7 +14,6 @@ class CommandFilterSerializer(BulkOrgResourceModelSerializer):
 
     class Meta:
         model = CommandFilter
-        list_serializer_class = AdaptedBulkListSerializer
         fields_mini = ['id', 'name']
         fields_small = fields_mini + [
             'org_id', 'org_name',
@@ -48,7 +46,20 @@ class CommandFilterRuleSerializer(BulkOrgResourceModelSerializer):
         ]
         fields_fk = ['filter']
         fields = '__all__'
-        list_serializer_class = AdaptedBulkListSerializer
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.set_action_choices()
+
+    def set_action_choices(self):
+        from django.conf import settings
+        action = self.fields.get('action')
+        if not action:
+            return
+        choices = action._choices
+        if not settings.XPACK_ENABLED:
+            choices.pop(CommandFilterRule.ActionChoices.confirm, None)
+        action._choices = choices
 
     # def validate_content(self, content):
     #     tp = self.initial_data.get("type")

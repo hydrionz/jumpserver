@@ -7,8 +7,6 @@ import string
 import random
 import datetime
 
-from functools import partial
-
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.hashers import check_password, make_password
@@ -25,12 +23,12 @@ from orgs.models import OrganizationMember, Organization
 from common.utils import date_expired_default, get_logger, lazyproperty, random_string
 from common import fields
 from common.const import choices
-from common.db.models import ChoiceSet
+from common.db.models import TextChoices
 from users.exceptions import MFANotEnabled
 from ..signals import post_user_change_password
 
 
-__all__ = ['User']
+__all__ = ['User', 'UserPasswordHistory']
 
 logger = get_logger(__file__)
 
@@ -82,12 +80,6 @@ class AuthMixin:
                 return True
         else:
             return False
-
-    def save_history_password(self, password):
-        UserPasswordHistory.objects.create(
-            user=self, password=make_password(password),
-            date_created=self.date_password_last_updated
-        )
 
     def is_public_key_valid(self):
         """
@@ -178,7 +170,7 @@ class AuthMixin:
 
 
 class RoleMixin:
-    class ROLE(ChoiceSet):
+    class ROLE(TextChoices):
         ADMIN = choices.ADMIN, _('System administrator')
         AUDITOR = choices.AUDITOR, _('System auditor')
         USER = choices.USER, _('User')
@@ -205,7 +197,8 @@ class RoleMixin:
         else:
             # 是真实组织, 取 OrganizationMember 中的角色
             roles = [
-                org_member.role for org_member in self.m2m_org_members.all()
+                getattr(ORG_ROLE, org_member.role.upper())
+                for org_member in self.m2m_org_members.all()
                 if org_member.org_id == current_org.id
             ]
             roles.sort()
@@ -214,7 +207,7 @@ class RoleMixin:
     @lazyproperty
     def org_roles_label_list(self):
         from orgs.models import ROLE as ORG_ROLE
-        return [str(ORG_ROLE[role]) for role in self.org_roles if role in ORG_ROLE]
+        return [str(role.label) for role in self.org_roles if role in ORG_ROLE]
 
     @lazyproperty
     def org_role_display(self):
@@ -607,12 +600,20 @@ class User(AuthMixin, TokenMixin, RoleMixin, MFAMixin, AbstractUser):
         auto_now_add=True, blank=True, null=True,
         verbose_name=_('Date password last updated')
     )
-    need_update_password = models.BooleanField(default=False)
+    need_update_password = models.BooleanField(
+        default=False, verbose_name=_('Need update password')
+    )
     wecom_id = models.CharField(null=True, default=None, unique=True, max_length=128)
     dingtalk_id = models.CharField(null=True, default=None, unique=True, max_length=128)
 
     def __str__(self):
         return '{0.name}({0.username})'.format(self)
+
+    @classmethod
+    def get_group_ids_by_user_id(cls, user_id):
+        group_ids = cls.groups.through.objects.filter(user_id=user_id).distinct().values_list('usergroup_id', flat=True)
+        group_ids = list(group_ids)
+        return group_ids
 
     @property
     def is_wecom_bound(self):
@@ -771,3 +772,9 @@ class UserPasswordHistory(models.Model):
     user = models.ForeignKey("users.User", related_name='history_passwords',
                              on_delete=models.CASCADE, verbose_name=_('User'))
     date_created = models.DateTimeField(auto_now_add=True, verbose_name=_("Date created"))
+
+    def __str__(self):
+        return f'{self.user} set at {self.date_created}'
+
+    def __repr__(self):
+        return self.__str__()
