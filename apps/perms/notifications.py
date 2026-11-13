@@ -1,25 +1,56 @@
-from urllib.parse import urljoin
-
-from django.conf import settings
-from django.utils.translation import ugettext as _
 from django.template.loader import render_to_string
+from django.utils import timezone
+from django.utils.translation import gettext as _
 
 from common.utils import reverse as js_reverse
 from notifications.notifications import UserMessage
 
 
-class PermedAssetsWillExpireUserMsg(UserMessage):
-    def __init__(self, user, assets):
+class AssetPermissionWillExpireSoonUserMsg(UserMessage):
+    def __init__(self, user, permission):
         super().__init__(user)
-        self.assets = assets
+        self.permission = permission
 
     def get_html_msg(self) -> dict:
-        subject = _("You permed assets is about to expire")
+        from tickets.plugins.apply_asset.reapply import renewal_links
         context = {
             'name': self.user.name,
+            'permission_name': self.permission.name,
+            'org_name': self.permission.org.name,
+            'date_expired': timezone.localtime(self.permission.date_expired),
+            'renewal_links': renewal_links(self.user, [self.permission]),
+        }
+        message = render_to_string('perms/_msg_asset_permission_expire_soon.html', context)
+        return {
+            'subject': _('Asset permission is about to expire'),
+            'message': message,
+        }
+
+    @classmethod
+    def gen_test_msg(cls):
+        from perms.models import AssetPermission
+        from users.models import User
+
+        return cls(User.objects.first(), AssetPermission.objects.first())
+
+
+class PermedAssetsWillExpireUserMsg(UserMessage):
+    def __init__(self, user, assets, day_count=0, permissions=()):
+        super().__init__(user)
+        self.assets = assets
+        self.day_count = _('today') if day_count == 0 else str(day_count) + _('day')
+        self.permissions = permissions
+
+    def get_html_msg(self) -> dict:
+        from tickets.plugins.apply_asset.reapply import renewal_links
+        subject = _("The asset you authorized is about to expire")
+        context = {
+            'name': self.user.name,
+            'count': self.day_count,
             'items': [str(asset) for asset in self.assets],
             'item_type': _("permed assets"),
-            'show_help': True
+            'show_help': True,
+            'renewal_links': renewal_links(self.user, self.permissions),
         }
         message = render_to_string('perms/_msg_permed_items_expire.html', context)
         return {
@@ -38,10 +69,11 @@ class PermedAssetsWillExpireUserMsg(UserMessage):
 
 class AssetPermsWillExpireForOrgAdminMsg(UserMessage):
 
-    def __init__(self, user, perms, org):
+    def __init__(self, user, perms, org, day_count=0):
         super().__init__(user)
         self.perms = perms
         self.org = org
+        self.day_count = _('today') if day_count == 0 else str(day_count) + _('day')
 
     def get_items_with_url(self):
         items_with_url = []
@@ -49,7 +81,7 @@ class AssetPermsWillExpireForOrgAdminMsg(UserMessage):
             url = js_reverse(
                 'perms:asset-permission-detail',
                 kwargs={'pk': perm.id}, external=True,
-                api_to_ui=True
+                api_to_ui=True, is_console=True
             ) + f'?oid={perm.org_id}'
             items_with_url.append([perm.name, url])
         return items_with_url
@@ -59,6 +91,7 @@ class AssetPermsWillExpireForOrgAdminMsg(UserMessage):
         subject = _("Asset permissions is about to expire")
         context = {
             'name': self.user.name,
+            'count': str(self.day_count),
             'items_with_url': items_with_url,
             'item_type': _('asset permissions of organization {}').format(self.org)
         }
@@ -76,73 +109,5 @@ class AssetPermsWillExpireForOrgAdminMsg(UserMessage):
 
         user = User.objects.first()
         perms = AssetPermission.objects.all()[:10]
-        org = Organization.objects.first()
-        return cls(user, perms, org)
-
-
-class PermedAppsWillExpireUserMsg(UserMessage):
-    def __init__(self, user, apps):
-        super().__init__(user)
-        self.apps = apps
-
-    def get_html_msg(self) -> dict:
-        subject = _("Your permed applications is about to expire")
-        context = {
-            'name': self.user.name,
-            'item_type': _('permed applications'),
-            'items': [str(app) for app in self.apps]
-        }
-        message = render_to_string('perms/_msg_permed_items_expire.html', context)
-        return {
-            'subject': subject,
-            'message': message
-        }
-
-    @classmethod
-    def gen_test_msg(cls):
-        from users.models import User
-        from applications.models import Application
-
-        user = User.objects.first()
-        apps = Application.objects.all()[:10]
-        return cls(user, apps)
-
-
-class AppPermsWillExpireForOrgAdminMsg(UserMessage):
-    def __init__(self, user, perms, org):
-        super().__init__(user)
-        self.perms = perms
-        self.org = org
-
-    def get_items_with_url(self):
-        items_with_url = []
-        perm_detail_url = urljoin(settings.SITE_URL, '/ui/#/perms/app-permissions/{}')
-        for perm in self.perms:
-            url = perm_detail_url.format(perm.id) + f'?oid={perm.org_id}'
-            items_with_url.append([perm.name, url])
-        return items_with_url
-
-    def get_html_msg(self) -> dict:
-        items = self.get_items_with_url()
-        subject = _('Application permissions is about to expire')
-        context = {
-            'name': self.user.name,
-            'item_type': _('application permissions of organization {}').format(self.org),
-            'items_with_url': items
-        }
-        message = render_to_string('perms/_msg_item_permissions_expire.html', context)
-        return {
-            'subject': subject,
-            'message': message
-        }
-
-    @classmethod
-    def gen_test_msg(cls):
-        from users.models import User
-        from perms.models import ApplicationPermission
-        from orgs.models import Organization
-
-        user = User.objects.first()
-        perms = ApplicationPermission.objects.all()[:10]
         org = Organization.objects.first()
         return cls(user, perms, org)

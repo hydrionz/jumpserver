@@ -1,105 +1,159 @@
+from .workflow import WorkflowACLSerializerMixin
+from django.utils.translation import gettext_lazy as _, pgettext_lazy
+
+from common.serializers import MethodSerializer
+from common.serializers.fields import LabeledChoiceField, ObjectRelatedField
+from django.conf import settings
 from rest_framework import serializers
-from django.utils.translation import ugettext_lazy as _
+from users.models import User
+from ..const import ActionChoices
 from orgs.mixins.serializers import BulkOrgResourceModelSerializer
-from assets.models import SystemUser
-from acls import models
-from orgs.models import Organization
+from .base import BaseUserAssetAccountACLSerializer as BaseSerializer
+from .rules import RuleSerializer
+from ..models import LoginAssetACL
+
+__all__ = ["LoginAssetACLSerializer"]
 
 
-__all__ = ['LoginAssetACLSerializer']
-
-
-common_help_text = _('Format for comma-delimited string, with * indicating a match all. ')
-
-
-class LoginAssetACLUsersSerializer(serializers.Serializer):
-    username_group = serializers.ListField(
-        default=['*'], child=serializers.CharField(max_length=128), label=_('Username'),
-        help_text=common_help_text
+class LoginAssetACLSerializer(WorkflowACLSerializerMixin, BaseSerializer, BulkOrgResourceModelSerializer):
+    rules = MethodSerializer(label=_('Rule'))
+    action = LabeledChoiceField(
+        choices=((ActionChoices.accept, _('Allow')), (ActionChoices.reject, _('Reject'))),
+        default=ActionChoices.reject,
+        label=_('Action'),
+        help_text=_(
+            'Allow applies the connection controls; Reject blocks the connection.'
+        ),
+    )
+    accounts = serializers.ListField(
+        child=serializers.CharField(), label=_('Account'),
+        help_text=_(
+            'Account usernames or @ALL (all accounts), @SPEC with specified usernames, '
+            "and @USER (the current user's same-name account)."
+        ),
+    )
+    recipients = ObjectRelatedField(
+        queryset=User.objects.all(), many=True, required=False, label=_('Recipients'),
     )
 
-
-class LoginAssetACLAssestsSerializer(serializers.Serializer):
-    ip_group_help_text = _(
-        'Format for comma-delimited string, with * indicating a match all. '
-        'Such as: '
-        '192.168.10.1, 192.168.1.0/24, 10.1.1.1-10.1.1.20, 2001:db8:2de::e13, 2001:db8:1a:1110::/64 '
-        '(Domain name support)'
-    )
-
-    ip_group = serializers.ListField(
-        default=['*'], child=serializers.CharField(max_length=1024), label=_('IP'),
-        help_text=ip_group_help_text
-    )
-    hostname_group = serializers.ListField(
-        default=['*'], child=serializers.CharField(max_length=128), label=_('Hostname'),
-        help_text=common_help_text
-    )
-
-
-class LoginAssetACLSystemUsersSerializer(serializers.Serializer):
-    protocol_group_help_text = _(
-        'Format for comma-delimited string, with * indicating a match all. '
-        'Protocol options: {}'
-    )
-
-    name_group = serializers.ListField(
-        default=['*'], child=serializers.CharField(max_length=128), label=_('Name'),
-        help_text=common_help_text
-    )
-    username_group = serializers.ListField(
-        default=['*'], child=serializers.CharField(max_length=128), label=_('Username'),
-        help_text=common_help_text
-    )
-    protocol_group = serializers.ListField(
-        default=['*'], child=serializers.CharField(max_length=16), label=_('Protocol'),
-        help_text=protocol_group_help_text.format(
-            ', '.join([SystemUser.Protocol.ssh, SystemUser.Protocol.telnet])
-        )
-    )
-
-    @staticmethod
-    def validate_protocol_group(protocol_group):
-        unsupported_protocols = set(protocol_group) - set(SystemUser.ASSET_CATEGORY_PROTOCOLS + ['*'])
-        if unsupported_protocols:
-            error = _('Unsupported protocols: {}').format(unsupported_protocols)
-            raise serializers.ValidationError(error)
-        return protocol_group
-
-
-class LoginAssetACLSerializer(BulkOrgResourceModelSerializer):
-    users = LoginAssetACLUsersSerializer()
-    assets = LoginAssetACLAssestsSerializer()
-    system_users = LoginAssetACLSystemUsersSerializer()
-    reviewers_amount = serializers.IntegerField(read_only=True, source='reviewers.count')
-    action_display = serializers.ReadOnlyField(source='get_action_display', label=_('Action'))
-
-    class Meta:
-        model = models.LoginAssetACL
-        fields_mini = ['id', 'name']
-        fields_small = fields_mini + [
-            'users', 'system_users', 'assets',
-            'is_active',
-            'date_created', 'date_updated',
-            'priority', 'action', 'action_display', 'comment', 'created_by', 'org_id'
-        ]
-        fields_m2m = ['reviewers', 'reviewers_amount']
-        fields = fields_small + fields_m2m
+    class Meta(BaseSerializer.Meta):
+        model = LoginAssetACL
+        fields = BaseSerializer.Meta.fields + ['rules', 'review_duration', 'workflow', 'workflow_name', 'recipients', *LoginAssetACL.CONTROL_FIELDS]
         extra_kwargs = {
-            "reviewers": {'allow_null': False, 'required': True},
-            'priority': {'default': 50},
-            'is_active': {'default': True},
+            **BaseSerializer.Meta.extra_kwargs,
+            'priority': {
+                **BaseSerializer.Meta.extra_kwargs['priority'],
+                'help_text': _(
+                    '1-100; lower values have higher priority.\n'
+                    'Select the highest-priority group from the rules that match. '
+                    'Any Reject in that group blocks the connection; '
+                    'if all Allow, combine their enabled connection controls.'
+                ),
+            },
+            'reviewers': {
+                'label': _('Reviewers'),
+                'help_text': _(
+                    'Select reviewers when approval is enabled. Connections are blocked if no reviewers are available.'
+                ),
+            },
+            'review_duration': {
+                'label': _('Exemption period'),
+                'help_text': _(
+                    'After approval, allow reconnects by the same user to the same asset and account under this '
+                    'rule for this many hours. 0 requires approval every time. Changes do not affect existing exemptions.'
+                ),
+            },
+            'reason_enabled': {
+                'label': _('Connection reason'),
+                'help_text': _(
+                    'Enter a reason before connecting.'
+                ),
+            },
+            'mfa_enabled': {
+                'label': _('MFA verification'),
+                'help_text': _(
+                    'Verify an enrolled MFA code before connecting. '
+                    'Block connections if no code-based MFA method is enrolled.'
+                ),
+            },
+            'face_verify_enabled': {
+                'label': _('Face verification'),
+                'help_text': _(
+                    "Verify the user's face before connecting. Requires system face recognition and an enrolled face."
+                ),
+            },
+            'review_enabled': {
+                'label': _('Require approval'),
+                'help_text': _(
+                    'Require approval before connecting, except during a valid exemption period.'
+                ),
+            },
+            'notice_enabled': {
+                'label': _('Send notification'),
+                'help_text': _(
+                    'Notify the selected recipients when a user requests an asset connection. '
+                    'A notification does not mean the connection succeeded.'
+                ),
+            },
+            'push_account_enabled': {
+                'label': pgettext_lazy('Asset connection ACL', 'Push account'),
+                'help_text': _(
+                    'Automatically provision only same-name accounts before their first connection; '
+                    'reuse existing managed accounts without provisioning them again. '
+                    'Requires account provisioning support on the asset platform.'
+                ),
+            },
+            'face_online_enabled': {
+                'label': pgettext_lazy('Asset connection ACL', 'Face online'),
+                'help_text': _(
+                    "Web Terminal only: verify the user's face before connecting and monitor throughout the session. "
+                    'Requires system face recognition and an enrolled face.'
+                ),
+            },
+            'change_secret_enabled': {
+                'label': _('Rotate password'),
+                'help_text': _(
+                    "Rotate the connected account's secret after the session ends. Requires system rotation "
+                    'after session end and automatic rotation on an active account.'
+                ),
+            },
         }
 
-    def validate_reviewers(self, reviewers):
-        org_id = self.fields['org_id'].default()
-        org = Organization.get_instance(org_id)
-        if not org:
-            error = _('The organization `{}` does not exist'.format(org_id))
-            raise serializers.ValidationError(error)
-        users = org.get_members()
-        valid_reviewers = list(set(reviewers) & set(users))
-        if not valid_reviewers:
-            error = _('None of the reviewers belong to Organization `{}`'.format(org.name))
-            raise serializers.ValidationError(error)
-        return valid_reviewers
+    def get_rules_serializer(self):
+        return RuleSerializer()
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        action = attrs.get('action', getattr(self.instance, 'action', ActionChoices.reject))
+        review_enabled = attrs.get('review_enabled', getattr(self.instance, 'review_enabled', False))
+        workflow = attrs.get('workflow', getattr(self.instance, 'workflow', None))
+        if action == ActionChoices.accept and review_enabled and not workflow:
+            reviewers = attrs.get('reviewers')
+            if reviewers is None:
+                reviewers = self.instance.reviewers.all() if self.instance else []
+            org_id = attrs.get('org_id', getattr(self.instance, 'org_id', None)) or self.fields['org_id'].default()
+            available = LoginAssetACL.filter_available_reviewers(reviewers, org_id)
+            if not available:
+                raise serializers.ValidationError({
+                    'reviewers': _('Select at least one active, unexpired reviewer from this organization.'),
+                })
+            if 'reviewers' in attrs:
+                attrs['reviewers'] = available
+        notice_enabled = attrs.get('notice_enabled', getattr(self.instance, 'notice_enabled', False))
+        if action == ActionChoices.accept and notice_enabled:
+            recipients = attrs.get('recipients')
+            if recipients is None:
+                recipients = self.instance.recipients.all() if self.instance else []
+            if not recipients:
+                raise serializers.ValidationError({
+                    'recipients': _('Select at least one notification recipient.'),
+                })
+        for field in ('review_enabled', 'face_verify_enabled', 'face_online_enabled', 'change_secret_enabled'):
+            if attrs.get(field) and not settings.XPACK_LICENSE_IS_VALID:
+                raise serializers.ValidationError({field: _('A valid license is required')})
+        for field in ('face_verify_enabled', 'face_online_enabled'):
+            if attrs.get(field) and not settings.FACE_RECOGNITION_ENABLED:
+                raise serializers.ValidationError({field: _('Face recognition is disabled')})
+        if attrs.get('change_secret_enabled') and not settings.CHANGE_SECRET_AFTER_SESSION_END:
+            raise serializers.ValidationError({'change_secret_enabled': _('Secret rotation after session end is disabled')})
+        return attrs

@@ -17,7 +17,9 @@ class WeCom(BackendBase):
 
     def send_msg(self, users, message, subject=None):
         accounts, __, __ = self.get_accounts(users)
-        return self.wecom.send_text(accounts, message)
+        if not accounts:
+            return
+        return self.wecom.send_text(accounts, message, markdown=True)
 
 
 backend = WeCom

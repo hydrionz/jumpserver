@@ -1,20 +1,25 @@
-from common.permissions import IsOrgAdmin, HasQueryParamsUserAndIsCurrentOrgMember
-from common.drf.api import JMSBulkModelViewSet
-from ..models import LoginACL
-from .. import serializers
-from ..filters import LoginAclFilter
+from common.api import JMSBulkModelViewSet
 
-__all__ = ['LoginACLViewSet', ]
+from orgs.utils import tmp_to_root_org
+from .common import ACLUserFilterMixin
+from .. import serializers
+from ..models import LoginACL
+
+__all__ = ['LoginACLViewSet']
+
+
+class LoginACLFilter(ACLUserFilterMixin):
+    class Meta:
+        model = LoginACL
+        fields = ('id', 'name', 'users', 'action')
 
 
 class LoginACLViewSet(JMSBulkModelViewSet):
     queryset = LoginACL.objects.all()
-    filterset_class = LoginAclFilter
+    filterset_class = LoginACLFilter
     search_fields = ('name',)
-    permission_classes = (IsOrgAdmin,)
     serializer_class = serializers.LoginACLSerializer
 
-    def get_permissions(self):
-        if self.action in ["retrieve", "list"]:
-            self.permission_classes = (IsOrgAdmin, HasQueryParamsUserAndIsCurrentOrgMember)
-        return super().get_permissions()
+    def filter_queryset(self, queryset):
+        with tmp_to_root_org():
+            return super().filter_queryset(queryset)

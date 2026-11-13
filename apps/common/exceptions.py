@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 #
 from django.utils.translation import gettext_lazy as _
-from rest_framework.exceptions import APIException
 from rest_framework import status
+from rest_framework.exceptions import APIException
 
 
 class JMSException(APIException):
@@ -15,8 +15,8 @@ class JMSObjectDoesNotExist(APIException):
     default_detail = _('%s object does not exist.')
 
     def __init__(self, detail=None, code=None, object_name=None):
-        if detail is None and object_name:
-            detail = self.default_detail % object_name
+        if detail is None:
+            detail = (self.default_detail % (object_name or '')).strip()
         super(JMSObjectDoesNotExist, self).__init__(detail=detail, code=code)
 
 
@@ -41,7 +41,24 @@ class ReferencedByOthers(JMSException):
     default_detail = _('Is referenced by other objects and cannot be deleted')
 
 
-class MFAVerifyRequired(JMSException):
-    status_code = status.HTTP_400_BAD_REQUEST
-    default_code = 'mfa_verify_required'
-    default_detail = _('This action require verify your MFA')
+class UserConfirmRequired(JMSException):
+    status_code = status.HTTP_412_PRECONDITION_FAILED
+
+    def __init__(self, code=None, *, detail=None, reason=None, confirm_ttl=None):
+        payload = {
+            'type': 'user_confirm_required',
+            'code': code,
+            'detail': detail or _('This action require confirm current user'),
+        }
+        if reason is not None:
+            payload['reason'] = reason
+        super().__init__(detail=payload, code=code)
+        if confirm_ttl is not None:
+            # APIException coerces values to strings; keep the TTL numeric in JSON.
+            self.detail['confirm_ttl'] = confirm_ttl
+
+
+class UnexpectError(JMSException):
+    status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+    default_code = 'unexpect_error'
+    default_detail = _('Unexpect error occur')

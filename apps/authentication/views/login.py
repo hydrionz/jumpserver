@@ -2,43 +2,146 @@
 #
 
 from __future__ import unicode_literals
-import os
-import datetime
 
-from django.templatetags.static import static
+import datetime
+import os
+from typing import Callable
+from urllib.parse import urlparse, urlsplit, urlunsplit, urlencode
+
+from django.conf import settings
+from django.contrib.auth import BACKEND_SESSION_KEY
 from django.contrib.auth import login as auth_login, logout as auth_logout
-from django.http import HttpResponse
+from django.db import IntegrityError
+from django.http import HttpRequest
 from django.shortcuts import reverse, redirect
+from django.urls import reverse_lazy
 from django.utils.decorators import method_decorator
-from django.db import transaction
-from django.utils.translation import ugettext as _
+from django.utils.html import format_html
+from django.utils.translation import gettext as _, get_language, get_language_from_request
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.generic.base import TemplateView, RedirectView
 from django.views.generic.edit import FormView
-from django.conf import settings
-from django.urls import reverse_lazy
-from django.contrib.auth import BACKEND_SESSION_KEY
 
-from common.utils import FlashMessageUtil
+from common.const import Language
+from common.utils import FlashMessageUtil, safe_next_url, get_logger
+from tickets.workflow.errors import WorkflowConfigurationError
 from users.utils import (
     redirect_user_first_login_or_index
 )
-from ..const import RSA_PRIVATE_KEY, RSA_PUBLIC_KEY
 from .. import mixins, errors
+from ..const import RSA_PRIVATE_KEY, RSA_PUBLIC_KEY, USER_LOGIN_GUARD_VIEW_REDIRECT_FIELD
 from ..forms import get_user_login_form_cls
+from ..utils import get_auth_methods
 
 __all__ = [
     'UserLoginView', 'UserLogoutView',
     'UserLoginGuardView', 'UserLoginWaitConfirmView',
 ]
 
+logger = get_logger(__name__)
+
+
+class UserLoginContextMixin:
+    get_user_mfa_context: Callable
+    request: HttpRequest
+    error_origin: str
+
+    def get_support_auth_methods(self):
+        query_params = self.request.GET.copy()
+        query_params.pop('admin', None)
+        query_string = query_params.urlencode()
+        all_methods = get_auth_methods()
+        methods = []
+        for method in all_methods:
+            method = method.copy()
+            if not method.get('enabled', False):
+                continue
+            url = method.get('url', '')
+            if query_string and url:
+                method['url'] = '{}?{}'.format(url, query_string)
+            methods.append(method)
+        return methods
+
+    @staticmethod
+    def get_support_langs():
+        langs = [
+            {
+                'title': title,
+                'code': code
+            }
+            for code, title in Language.choices_supported()
+        ]
+        return langs
+
+    def get_current_lang(self):
+        langs = self.get_support_langs()
+        lang = get_language()
+        matched_lang = filter(lambda x: x['code'] == lang, langs)
+        return next(matched_lang, langs[0])
+
+    @staticmethod
+    def get_forgot_password_url():
+        forgot_password_url = reverse('authentication:forgot-previewing')
+        forgot_password_url = settings.FORGOT_PASSWORD_URL or forgot_password_url
+        return forgot_password_url
+
+    def get_extra_fields_count(self, context):
+        count = 0
+        if self.get_support_auth_methods():
+            count += 1
+        form = context.get('form')
+        if not form:
+            return count
+        if set(form.fields.keys()) & {'captcha', 'challenge', 'mfa_type'}:
+            count += 1
+        if form.errors or form.non_field_errors():
+            count += 1
+        return count
+
+    def set_csrf_error_if_need(self, context):
+        if not self.request.GET.get('csrf_failure'):
+            return context
+
+        if self.request.GET.get('csrf_reason') == 'cookie':
+            context['csrf_cookie_error'] = True
+            context['session_cookie_domain'] = settings.SESSION_COOKIE_DOMAIN
+            return context
+
+        http_origin = self.request.META.get('HTTP_ORIGIN')
+        http_referer = self.request.META.get('HTTP_REFERER')
+        http_origin = http_origin or http_referer
+
+        if not http_origin:
+            return context
+
+        try:
+            origin = urlparse(http_origin)
+            context['error_origin'] = str(origin.netloc)
+        except ValueError:
+            pass
+        return context
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        self.set_csrf_error_if_need(context)
+        context.update({
+            'demo_mode': os.environ.get("DEMO_MODE"),
+            'auth_methods': self.get_support_auth_methods(),
+            'langs': self.get_support_langs(),
+            'current_lang': self.get_current_lang(),
+            'forgot_password_url': self.get_forgot_password_url(),
+            'extra_fields_count': self.get_extra_fields_count(context),
+            **self.get_user_mfa_context(self.request.user)
+        })
+        return context
+
 
 @method_decorator(sensitive_post_parameters(), name='dispatch')
 @method_decorator(csrf_protect, name='dispatch')
 @method_decorator(never_cache, name='dispatch')
-class UserLoginView(mixins.AuthMixin, FormView):
+class UserLoginView(mixins.AuthMixin, UserLoginContextMixin, FormView):
     redirect_field_name = 'next'
     template_name = 'authentication/login.html'
 
@@ -46,53 +149,52 @@ class UserLoginView(mixins.AuthMixin, FormView):
         # show jumpserver login page if request http://{JUMP-SERVER}/?admin=1
         if self.request.GET.get("admin", 0):
             return None
+
+        auth_types = [m for m in self.get_support_auth_methods() if m.get('auto_redirect')]
+        if not auth_types:
+            return None
+
+        # 明确直接登录哪个
+        login_to = settings.LOGIN_REDIRECT_TO_BACKEND.upper()
+        if login_to == 'DIRECT':
+            return None
+
+        auth_method = next(filter(lambda x: x['name'] == login_to, auth_types), None)
+        if not auth_method:
+            auth_method = auth_types[0]
+
+        auth_name, redirect_url = auth_method['name'], auth_method['url']
         next_url = request.GET.get('next') or '/'
-        auth_type = ''
+        next_url = safe_next_url(next_url, request=request)
 
-        if settings.AUTH_OPENID:
-            auth_type = 'OIDC'
-            openid_auth_url = reverse(settings.AUTH_OPENID_AUTH_LOGIN_URL_NAME)
-            openid_auth_url = openid_auth_url + f'?next={next_url}'
-        else:
-            openid_auth_url = None
+        merged_qs_items = dict(request.GET.lists())
+        merged_qs_items.pop('next', None)
 
-        if settings.AUTH_CAS:
-            auth_type = 'CAS'
-            cas_auth_url = reverse(settings.CAS_LOGIN_URL_NAME) + f'?next={next_url}'
-        else:
-            cas_auth_url = None
+        merged = {}
+        for k, v_list in merged_qs_items.items():
+            merged[k] = v_list if len(v_list) > 1 else (v_list[0] if v_list else '')
 
-        if not any([openid_auth_url, cas_auth_url]):
-            return None
-
-        login_redirect = settings.LOGIN_REDIRECT_TO_BACKEND.lower()
-        if login_redirect in ['direct']:
-            return None
-        if login_redirect in ['cas'] and cas_auth_url:
-            auth_url = cas_auth_url
-        elif login_redirect in ['openid', 'oidc'] and openid_auth_url:
-            auth_url = openid_auth_url
-        else:
-            auth_url = openid_auth_url or cas_auth_url
-
-        if settings.LOGIN_REDIRECT_TO_BACKEND or not settings.LOGIN_REDIRECT_MSG_ENABLED:
-            redirect_url = auth_url
-        else:
+        merged['next'] = next_url
+        query = urlencode(merged, doseq=True)
+        u = urlsplit(redirect_url)
+        redirect_url = urlunsplit((u.scheme, u.netloc, u.path, query, u.fragment))
+        if settings.LOGIN_REDIRECT_MSG_ENABLED:
             message_data = {
                 'title': _('Redirecting'),
-                'message': _("Redirecting to {} authentication").format(auth_type),
-                'redirect_url': auth_url,
+                'message': _("Redirecting to {} authentication").format(auth_name),
+                'redirect_url': redirect_url,
                 'interval': 3,
                 'has_cancel': True,
-                'cancel_url': reverse('authentication:login') + '?admin=1'
+                'cancel_url': reverse('authentication:login') + f'?admin=1&{query}'
             }
             redirect_url = FlashMessageUtil.gen_message_url(message_data)
-
-        query_string = request.GET.urlencode()
-        redirect_url = "{}&{}".format(redirect_url, query_string)
         return redirect_url
 
     def get(self, request, *args, **kwargs):
+        next_page = request.GET.get(self.redirect_field_name)
+        if next_page:
+            request.session[self.redirect_field_name] = next_page
+
         if request.user.is_staff:
             first_login_url = redirect_user_first_login_or_index(
                 request, self.redirect_field_name
@@ -106,12 +208,16 @@ class UserLoginView(mixins.AuthMixin, FormView):
 
     def form_valid(self, form):
         if not self.request.session.test_cookie_worked():
-            return HttpResponse(_("Please enable cookies and try again."))
+            form.add_error(None, _("Login timeout, please try again."))
+            # 当 session 过期后，刷新浏览器重新提交依旧会报错，所以需要重新设置 test_cookie
+            self.request.session.set_test_cookie()
+            return self.form_invalid(form)
+
         # https://docs.djangoproject.com/en/3.1/topics/http/sessions/#setting-test-cookies
         self.request.session.delete_test_cookie()
 
         try:
-            self.check_user_auth(decrypt_passwd=True)
+            self.check_user_auth(form.cleaned_data)
         except errors.AuthFailedError as e:
             form.add_error(None, e.msg)
             self.set_login_failed_mark()
@@ -121,12 +227,7 @@ class UserLoginView(mixins.AuthMixin, FormView):
             context = self.get_context_data(form=new_form)
             self.request.session.set_test_cookie()
             return self.render_to_response(context)
-        except (
-                errors.MFAUnsetError,
-                errors.PasswordTooSimple,
-                errors.PasswordRequireResetError,
-                errors.PasswordNeedUpdate
-        ) as e:
+        except errors.NeedRedirectError as e:
             return redirect(e.url)
         except (
                 errors.MFAFailedError,
@@ -137,6 +238,23 @@ class UserLoginView(mixins.AuthMixin, FormView):
                 errors.BlockGlobalIpLoginError
         ) as e:
             form.add_error('code', e.msg)
+            return super().form_invalid(form)
+        except (IntegrityError,) as e:
+            # (1062, "Duplicate entry 'youtester001@example.com' for key 'users_user.email'")
+            error = str(e)
+            if len(e.args) < 2:
+                form.add_error(None, error)
+                return super().form_invalid(form)
+
+            msg_list = e.args[1].split("'")
+            if len(msg_list) < 4:
+                form.add_error(None, error)
+                return super().form_invalid(form)
+
+            email, field = msg_list[1], msg_list[3]
+            if field == 'users_user.email':
+                error = _('User email already exists ({})').format(email)
+            form.add_error(None, error)
             return super().form_invalid(form)
         self.clear_rsa_key()
         return self.redirect_to_guard_view()
@@ -151,66 +269,13 @@ class UserLoginView(mixins.AuthMixin, FormView):
         self.request.session[RSA_PRIVATE_KEY] = None
         self.request.session[RSA_PUBLIC_KEY] = None
 
-    @staticmethod
-    def get_support_auth_methods():
-        auth_methods = [
-            {
-                'name': 'OpenID',
-                'enabled': settings.AUTH_OPENID,
-                'url': reverse('authentication:openid:login'),
-                'logo': static('img/login_oidc_logo.png')
-            },
-            {
-                'name': 'CAS',
-                'enabled': settings.AUTH_CAS,
-                'url': reverse('authentication:cas:cas-login'),
-                'logo': static('img/login_cas_logo.png')
-            },
-            {
-                'name': _('WeCom'),
-                'enabled': settings.AUTH_WECOM,
-                'url': reverse('authentication:wecom-qr-login'),
-                'logo': static('img/login_wecom_logo.png')
-            },
-            {
-                'name': _('DingTalk'),
-                'enabled': settings.AUTH_DINGTALK,
-                'url': reverse('authentication:dingtalk-qr-login'),
-                'logo': static('img/login_dingtalk_logo.png')
-            },
-            {
-                'name': _('FeiShu'),
-                'enabled': settings.AUTH_FEISHU,
-                'url': reverse('authentication:feishu-qr-login'),
-                'logo': static('img/login_feishu_logo.png')
-            }
-        ]
-        return [method for method in auth_methods if method['enabled']]
-
-    @staticmethod
-    def get_forgot_password_url():
-        forgot_password_url = reverse('authentication:forgot-password')
-        has_other_auth_backend = settings.AUTHENTICATION_BACKENDS[0] != settings.AUTH_BACKEND_MODEL
-        if has_other_auth_backend and settings.FORGOT_PASSWORD_URL:
-            forgot_password_url = settings.FORGOT_PASSWORD_URL
-        return forgot_password_url
-
-    def get_context_data(self, **kwargs):
-        context = {
-            'demo_mode': os.environ.get("DEMO_MODE"),
-            'auth_methods': self.get_support_auth_methods(),
-            'forgot_password_url': self.get_forgot_password_url(),
-            **self.get_user_mfa_context(self.request.user)
-        }
-        kwargs.update(context)
-        return super().get_context_data(**kwargs)
-
 
 class UserLoginGuardView(mixins.AuthMixin, RedirectView):
-    redirect_field_name = 'next'
+    redirect_field_name = USER_LOGIN_GUARD_VIEW_REDIRECT_FIELD
     login_url = reverse_lazy('authentication:login')
     login_mfa_url = reverse_lazy('authentication:login-mfa')
     login_confirm_url = reverse_lazy('authentication:login-wait-confirm')
+    query_string = True
 
     def format_redirect_url(self, url):
         args = self.request.META.get('QUERY_STRING', '')
@@ -220,28 +285,38 @@ class UserLoginGuardView(mixins.AuthMixin, RedirectView):
 
     def login_it(self, user):
         auth_login(self.request, user)
-        # 如果设置了自动登录，那需要设置 session_id cookie 的有效期
-        if self.request.session.get('auto_login'):
-            age = self.request.session.get_expiry_age()
-            self.request.session.set_expiry(age)
 
     def get_redirect_url(self, *args, **kwargs):
         try:
-            user = self.check_user_auth_if_need()
+            user = self.get_user_from_session()
             self.check_user_mfa_if_need(user)
+            review_required = self.request.session.get('auth_confirm_required')
             self.check_user_login_confirm_if_need(user)
         except (errors.CredentialError, errors.SessionEmptyError) as e:
-            print("Error: ", e)
             return self.format_redirect_url(self.login_url)
         except errors.MFARequiredError:
             return self.format_redirect_url(self.login_mfa_url)
         except errors.LoginConfirmBaseError:
             return self.format_redirect_url(self.login_confirm_url)
+        except WorkflowConfigurationError as exc:
+            logger.warning('Unable to start login approval for user %s: %s', user.pk, exc)
+            message = _('The login approval workflow is misconfigured. Unable to log in. Please contact your administrator.')
+            auth_logout(self.request)
+            self.send_auth_signal(success=False, username=user.username, reason=message)
+            return FlashMessageUtil.gen_message_url({
+                'title': _('Login confirm'), 'error': message,
+                'redirect_url': reverse('authentication:login') + '?admin=1',
+                'confirm_button': _('Login'), 'auto_redirect': False,
+            })
         except errors.MFAUnsetError as e:
             return e.url
         except errors.PasswordTooSimple as e:
             return e.url
         else:
+            if review_required and self.request.session.get('auth_third_party_required'):
+                # Reviewer exemptions can finish here without polling the approval API.
+                self.request.session['auth_third_party_done'] = 1
+                self.request.session.pop('auth_third_party_required', None)
             self.login_it(user)
             self.send_auth_signal(success=True, user=user)
             self.clear_auth_mark()
@@ -249,6 +324,21 @@ class UserLoginGuardView(mixins.AuthMixin, RedirectView):
                 self.request, self.redirect_field_name
             )
             return url
+
+    def get(self, request, *args, **kwargs):
+        from django.utils import timezone
+        response = super().get(request, *args, **kwargs)
+        try:
+            request_lang = get_language_from_request(request, check_path=False)
+            lang = request.user.lang if request.user.lang else request_lang
+            response.set_cookie(
+                settings.LANGUAGE_COOKIE_NAME,
+                lang,
+                expires=timezone.now() + timezone.timedelta(days=365)
+            )
+        except Exception:
+            pass
+        return response
 
 
 class UserLoginWaitConfirmView(TemplateView):
@@ -265,11 +355,12 @@ class UserLoginWaitConfirmView(TemplateView):
         context = super().get_context_data(**kwargs)
         if ticket:
             timestamp_created = datetime.datetime.timestamp(ticket.date_created)
-            ticket_detail_url = TICKET_DETAIL_URL.format(id=ticket_id)
-            assignees = ticket.current_node.first().ticket_assignees.all()
-            assignees_display = ', '.join([str(i.assignee) for i in assignees])
-            msg = _("""Wait for <b>{}</b> confirm, You also can copy link to her/him <br/>
-                  Don't close this page""").format(assignees_display)
+            ticket_detail_url = TICKET_DETAIL_URL.format(id=ticket_id, type=ticket.type)
+            assignees_display = ', '.join([str(assignee) for assignee in ticket.current_assignees])
+            msg = format_html(
+                _("""Wait for <b>{}</b> confirm, You also can copy link to her/him <br/>
+                  Don't close this page"""), assignees_display
+            )
         else:
             timestamp_created = 0
             ticket_detail_url = ''
@@ -292,11 +383,18 @@ class UserLogoutView(TemplateView):
             return settings.AUTH_OPENID_AUTH_LOGOUT_URL_NAME
         elif 'CAS' in backend:
             return settings.CAS_LOGOUT_URL_NAME
+        elif 'saml2' in backend:
+            return settings.SAML2_LOGOUT_URL_NAME
+        elif 'oauth2' in backend:
+            return settings.AUTH_OAUTH2_LOGOUT_URL_NAME
         return None
 
     def get(self, request, *args, **kwargs):
         backend_logout_url = self.get_backend_logout_url()
         if backend_logout_url:
+            # Preserve provider logout data until its handler completes, while clearing local caches now.
+            from authentication.services.web_session_lock import clear_web_session_cache
+            clear_web_session_cache(request.session.session_key)
             return redirect(backend_logout_url)
 
         auth_logout(request)

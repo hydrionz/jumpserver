@@ -1,15 +1,27 @@
 # -*- coding: utf-8 -*-
 #
+from django.conf import settings
 from django.contrib.auth import get_user_model
+
+from common.permissions import ServiceAccountSignaturePermission
+from .base import JMSBaseAuthBackend
 
 UserModel = get_user_model()
 
 __all__ = ['PublicKeyAuthBackend']
 
 
-class PublicKeyAuthBackend:
+class PublicKeyAuthBackend(JMSBaseAuthBackend):
+    @staticmethod
+    def is_enabled():
+        return settings.TERMINAL_PUBLIC_KEY_AUTH
+
     def authenticate(self, request, username=None, public_key=None, **kwargs):
         if not public_key:
+            return None
+
+        permission = ServiceAccountSignaturePermission()
+        if not permission.has_permission(request, None):
             return None
         if username is None:
             username = kwargs.get(UserModel.USERNAME_FIELD)
@@ -19,17 +31,8 @@ class PublicKeyAuthBackend:
             return None
         else:
             if user.check_public_key(public_key) and \
-                  self.user_can_authenticate(user):
+                    self.user_can_authenticate(user):
                 return user
-
-    @staticmethod
-    def user_can_authenticate(user):
-        """
-        Reject users with is_active=False. Custom user models that don't have
-        that attribute are allowed.
-        """
-        is_active = getattr(user, 'is_active', None)
-        return is_active or is_active is None
 
     def get_user(self, user_id):
         try:

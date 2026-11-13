@@ -1,10 +1,11 @@
-from random import choice, sample
+from random import sample
+
 import forgery_py
 
-from .base import FakeDataGenerator
-
+from orgs.utils import current_org
+from rbac.models import RoleBinding, Role
 from users.models import *
-from orgs.models import OrganizationMember
+from .base import FakeDataGenerator
 
 
 class UserGroupGenerator(FakeDataGenerator):
@@ -24,17 +25,7 @@ class UserGenerator(FakeDataGenerator):
     group_ids: list
 
     def pre_generate(self):
-        self.roles = list(dict(User.ROLE.choices).keys())
         self.group_ids = list(UserGroup.objects.all().values_list('id', flat=True))
-
-    def set_org(self, users):
-        relations = []
-        for u in users:
-            relations.append(OrganizationMember(
-                org_id=self.org.id,
-                user_id=u.id,
-            ))
-        OrganizationMember.objects.bulk_create(relations, ignore_conflicts=True)
 
     def set_groups(self, users):
         relations = []
@@ -53,10 +44,17 @@ class UserGenerator(FakeDataGenerator):
                 username=username,
                 email=email,
                 name=username.title(),
-                role=choice(self.roles),
                 created_by='Faker'
             )
             users.append(u)
         users = User.objects.bulk_create(users, ignore_conflicts=True)
-        self.set_org(users)
         self.set_groups(users)
+        self.set_to_org(users)
+
+    def set_to_org(self, users):
+        bindings = []
+        role = Role.objects.get(name='OrgUser')
+        for u in users:
+            b = RoleBinding(user=u, role=role, org_id=current_org.id, scope='org')
+            bindings.append(b)
+        RoleBinding.objects.bulk_create(bindings, ignore_conflicts=True)

@@ -1,134 +1,242 @@
-<p align="center"><a href="https://jumpserver.org"><img src="https://download.jumpserver.org/images/jumpserver-logo.svg" alt="JumpServer" width="300" /></a></p>
-<h3 align="center">多云环境下更好用的堡垒机</h3>
+<div align="center">
+  <a name="readme-top"></a>
+  <a href="https://jumpserver.com" target="_blank"><img src="readmes/assets/jumpserver-logo.svg" alt="JumpServer" width="300" /></a>
+  
+## An open-source PAM platform (Bastion Host)
+
+[![][license-shield]][license-link]
+[![][docs-shield]][docs-link]
+[![][deepwiki-shield]][deepwiki-link]
+[![][discord-shield]][discord-link]
+[![][docker-shield]][docker-link]
+[![][github-release-shield]][github-release-link]
+[![][github-stars-shield]][github-stars-link]
+
+[English](/README.md) · [中文(简体)](/readmes/README.zh-hans.md) · [中文(繁體)](/readmes/README.zh-hant.md) · [日本語](/readmes/README.ja.md) · [Português (Brasil)](/readmes/README.pt-br.md) · [Español](/readmes/README.es.md) · [Français](/readmes/README.fr.md) · [Русский](/readmes/README.ru.md) · [한국어](/readmes/README.ko.md) · [Tiếng Việt](/readmes/README.vi.md)
+
+</div>
+
+<br/>
+
+## What is JumpServer?
+
+JumpServer is an open-source Privileged Access Management (PAM) platform with AI-powered capabilities. It gives DevOps and IT teams a unified workspace for secure access to SSH, RDP, Kubernetes, databases, websites, RemoteApp, VirtualApp, and more.
+
+<img alt="JumpServer architecture diagram" src="readmes/assets/jumpserver-architecture.gif" />
+
+## Version Maintenance
+
+5.x is actively maintained, 4.10.x is an LTS release, and 3.10.x receives critical fixes only. V3 Community Edition (CE) reaches end of life on **December 31, 2026**, and Enterprise Edition (EE) on **December 31, 2028**.
+
+See [SECURITY.md](SECURITY.md) for version maintenance status and how to report security vulnerabilities.
+
+## Quickstart
+
+Prepare a clean 64-bit Linux server with at least 4 CPU cores and 8 GB of RAM.
+
+```sh
+curl -sSL https://github.com/jumpserver/jumpserver/releases/latest/download/quick_start.sh | bash
+```
+
+Open `https://<jumpserver-host>/` in your browser, replacing `<jumpserver-host>` with the IP address or domain name of the host running JumpServer.
+
+- Username: `admin`
+- Password: `ChangeMe`
+
+## Screenshots
 
 <p align="center">
-  <a href="https://www.gnu.org/licenses/old-licenses/gpl-2.0"><img src="https://shields.io/github/license/jumpserver/jumpserver" alt="License: GPL v2"></a>
-  <a href="https://shields.io/github/downloads/jumpserver/jumpserver/total"><img src="https://shields.io/github/downloads/jumpserver/jumpserver/total" alt=" release"></a>
-  <a href="https://hub.docker.com/u/jumpserver"><img src="https://img.shields.io/docker/pulls/jumpserver/jms_all.svg" alt="Codacy"></a>
-  <a href="https://github.com/jumpserver/jumpserver"><img src="https://img.shields.io/github/stars/jumpserver/jumpserver?color=%231890FF&style=flat-square" alt="Stars"></a>
+  <img src="readmes/assets/screenshot-01.png" alt="JumpServer PAM dashboard" title="JumpServer PAM dashboard" width="49%" />
+  <img src="readmes/assets/screenshot-02.png" alt="JumpServer asset management" title="JumpServer asset management" width="49%" />
 </p>
 
---------------------------
-- [ENGLISH](https://github.com/jumpserver/jumpserver/blob/master/README_EN.md)
+<p align="center">
+  <img src="readmes/assets/screenshot-03.png" alt="JumpServer SSH connection dialog" title="JumpServer SSH connection dialog" width="49%" />
+  <img src="readmes/assets/screenshot-04.png" alt="JumpServer terminal AI prompt" title="JumpServer terminal AI prompt" width="49%" />
+</p>
 
+<p align="center">
+  <img src="readmes/assets/screenshot-05.png" alt="JumpServer AI assistant" title="JumpServer AI assistant" width="49%" />
+  <img src="readmes/assets/screenshot-06.png" alt="JumpServer remote desktop session" title="JumpServer remote desktop session" width="49%" />
+</p>
 
+<p align="center">
+  <img src="readmes/assets/screenshot-07.png" alt="KoKo TUI asset browser with searchable authorized assets" title="KoKo TUI asset browser with searchable authorized assets" width="49%" />
+  <img src="readmes/assets/screenshot-08.png" alt="KoKo TUI multi-session manager for switching between active SSH sessions" title="KoKo TUI multi-session manager for switching between active SSH sessions" width="49%" />
+</p>
 
-JumpServer 是全球首款开源的堡垒机，使用 GNU GPL v2.0 开源协议，是符合 4A 规范的运维安全审计系统。
+<p align="center">
+  <img src="readmes/assets/screenshot-09.png" alt="KoKo classic text-mode home screen with connection shortcuts" title="KoKo classic text-mode home screen with connection shortcuts" width="49%" />
+  <img src="readmes/assets/screenshot-10.png" alt="KoKo classic text-mode asset list with authorized SSH targets" title="KoKo classic text-mode asset list with authorized SSH targets" width="49%" />
+</p>
 
-JumpServer 使用 Python 开发，遵循 Web 2.0 规范，配备了业界领先的 Web Terminal 方案，交互界面美观、用户体验好。
+## Components
 
-JumpServer 采纳分布式架构，支持多机房跨区域部署，支持横向扩展，无资产数量及并发限制。
+JumpServer groups its components by role. Core projects provide the platform, web interface, terminal, protocol connections, and AI capabilities. Enterprise components extend application and protocol access. Supporting services handle session recordings and host operations, while deployment tools simplify installation and web delivery.
 
-改变世界，从一点点开始 ...
+### Core Projects
 
-> 如需进一步了解 JumpServer 开源项目，推荐阅读 [JumpServer 的初心和使命](https://mp.weixin.qq.com/s/S6q_2rP_9MwaVwyqLQnXzA)
+<table width="100%">
+  <thead>
+    <tr>
+      <th width="160" align="left">Project</th>
+      <th width="135" align="center"><div align="center">Version</div></th>
+      <th width="550" align="center"><div align="center">Description</div></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td width="160" align="left" nowrap><a href="https://github.com/jumpserver/jumpserver">JumpServer</a></td>
+      <td width="135" align="center"><div align="center"><a href="https://github.com/jumpserver/jumpserver/tags"><img src="https://img.shields.io/github/v/tag/jumpserver/jumpserver?sort=semver&amp;filter=v5.*&amp;label=tag" alt="JumpServer version" /></a></div></td>
+      <td width="550" align="left">Open-source Privileged Access Management platform</td>
+    </tr>
+    <tr>
+      <td width="160" align="left" nowrap><a href="https://github.com/jumpserver/lina">Lina</a></td>
+      <td width="135" align="center"><div align="center"><a href="https://github.com/jumpserver/lina/tags"><img src="https://img.shields.io/github/v/tag/jumpserver/lina?sort=semver&amp;filter=v5.*&amp;label=tag" alt="Lina version" /></a></div></td>
+      <td width="550" align="left">JumpServer web interface</td>
+    </tr>
+    <tr>
+      <td width="160" align="left" nowrap><a href="https://github.com/jumpserver/luna">Luna</a></td>
+      <td width="135" align="center"><div align="center"><a href="https://github.com/jumpserver/luna/tags"><img src="https://img.shields.io/github/v/tag/jumpserver/luna?sort=semver&amp;filter=v5.*&amp;label=tag" alt="Luna version" /></a></div></td>
+      <td width="550" align="left">JumpServer web terminal and native client</td>
+    </tr>
+    <tr>
+      <td width="160" align="left" nowrap><a href="https://github.com/jumpserver/koko">KoKo</a></td>
+      <td width="135" align="center"><div align="center"><a href="https://github.com/jumpserver/koko/tags"><img src="https://img.shields.io/github/v/tag/jumpserver/koko?sort=semver&amp;filter=v5.*&amp;label=tag" alt="KoKo version" /></a></div></td>
+      <td width="550" align="left">JumpServer general-purpose protocol connector and proxy</td>
+    </tr>
+    <tr>
+      <td width="160" align="left" nowrap><a href="https://github.com/jumpserver/chen">Chen</a></td>
+      <td width="135" align="center"><div align="center"><a href="https://github.com/jumpserver/chen/tags"><img src="https://img.shields.io/github/v/tag/jumpserver/chen?sort=semver&amp;filter=v5.*&amp;label=tag" alt="Chen version" /></a></div></td>
+      <td width="550" align="left">JumpServer web database connector</td>
+    </tr>
+    <tr>
+      <td width="160" align="left" nowrap><a href="https://github.com/jumpserver/kael">Kael</a></td>
+      <td width="135" align="center"><div align="center"><a href="https://github.com/jumpserver/kael/tags"><img src="https://img.shields.io/github/v/tag/jumpserver/kael?sort=semver&amp;filter=v5.*&amp;label=tag" alt="Kael version" /></a></div></td>
+      <td width="550" align="left">JumpServer AI component</td>
+    </tr>
+  </tbody>
+</table>
 
-### 特色优势
+### Enterprise Components
 
-- 开源: 零门槛，线上快速获取和安装；
-- 分布式: 轻松支持大规模并发访问；
-- 无插件: 仅需浏览器，极致的 Web Terminal 使用体验；
-- 多云支持: 一套系统，同时管理不同云上面的资产；
-- 云端存储: 审计录像云端存储，永不丢失；
-- 多租户: 一套系统，多个子公司和部门同时使用；
-- 多应用支持: 数据库，Windows远程应用，Kubernetes。
+<table width="100%">
+  <thead>
+    <tr>
+      <th width="160" align="left">Project</th>
+      <th width="135" align="center"><div align="center">Version</div></th>
+      <th width="550" align="center"><div align="center">Description</div></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td width="160" align="left" nowrap><a href="https://github.com/jumpserver/tinker">Tinker</a></td>
+      <td width="135" align="center"><div align="center"><img src="https://img.shields.io/badge/tag-private-red" alt="Private version" /></div></td>
+      <td width="550" align="left">JumpServer Windows application connector (free for Community Edition)</td>
+    </tr>
+    <tr>
+      <td width="160" align="left" nowrap><a href="https://github.com/jumpserver/Panda">Panda</a></td>
+      <td width="135" align="center"><div align="center"><img src="https://img.shields.io/badge/tag-private-red" alt="Private version" /></div></td>
+      <td width="550" align="left">JumpServer Enterprise Edition Linux application connector</td>
+    </tr>
+    <tr>
+      <td width="160" align="left" nowrap><a href="https://github.com/jumpserver/razor">Razor</a></td>
+      <td width="135" align="center"><div align="center"><img src="https://img.shields.io/badge/tag-private-red" alt="Private version" /></div></td>
+      <td width="550" align="left">JumpServer Enterprise Edition RDP protocol proxy</td>
+    </tr>
+    <tr>
+      <td width="160" align="left" nowrap><a href="https://github.com/jumpserver/magnus">Magnus</a></td>
+      <td width="135" align="center"><div align="center"><img src="https://img.shields.io/badge/tag-private-red" alt="Private version" /></div></td>
+      <td width="550" align="left">JumpServer Enterprise Edition database protocol proxy</td>
+    </tr>
+    <tr>
+      <td width="160" align="left" nowrap><a href="https://github.com/jumpserver/nec">Nec</a></td>
+      <td width="135" align="center"><div align="center"><img src="https://img.shields.io/badge/tag-private-red" alt="Private version" /></div></td>
+      <td width="550" align="left">JumpServer Enterprise Edition VNC protocol proxy</td>
+    </tr>
+  </tbody>
+</table>
 
-### UI 展示
+### Supporting Services
 
-![UI展示](https://www.jumpserver.org/images/screenshot/1.png)
+<table width="100%">
+  <thead>
+    <tr>
+      <th width="160" align="left">Project</th>
+      <th width="135" align="center"><div align="center">Version</div></th>
+      <th width="550" align="center"><div align="center">Description</div></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td width="160" align="left" nowrap><a href="https://github.com/jumpserver/video-worker">Video&nbsp;Worker</a></td>
+      <td width="135" align="center"><div align="center"><img src="https://img.shields.io/badge/tag-private-red" alt="Private version" /></div></td>
+      <td width="550" align="left">JumpServer Enterprise Edition session recording transcoding worker</td>
+    </tr>
+    <tr>
+      <td width="160" align="left" nowrap><a href="https://github.com/jumpserver/jdmc">JDMC</a></td>
+      <td width="135" align="center"><div align="center"><img src="https://img.shields.io/badge/tag-private-red" alt="Private version" /></div></td>
+      <td width="550" align="left">JumpServer Enterprise Edition host operations and management service</td>
+    </tr>
+  </tbody>
+</table>
 
-### 在线体验
+### Deployment & Tooling
 
--   环境地址：<https://demo.jumpserver.org/>
+<table width="100%">
+  <thead>
+    <tr>
+      <th width="160" align="left">Project</th>
+      <th width="135" align="center"><div align="center">Version</div></th>
+      <th width="550" align="center"><div align="center">Description</div></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td width="160" align="left" nowrap><a href="https://github.com/jumpserver/installer">Installer</a></td>
+      <td width="135" align="center"><div align="center"><a href="https://github.com/jumpserver/installer/tags"><img src="https://img.shields.io/github/v/tag/jumpserver/installer?sort=semver&amp;filter=v5.*&amp;label=tag" alt="Installer version" /></a></div></td>
+      <td width="550" align="left">JumpServer installation and management tool</td>
+    </tr>
+    <tr>
+      <td width="160" align="left" nowrap><a href="https://github.com/jumpserver/docker-web">Docker&nbsp;Web</a></td>
+      <td width="135" align="center"><div align="center"><a href="https://github.com/jumpserver/docker-web/tags"><img src="https://img.shields.io/github/v/tag/jumpserver/docker-web?sort=semver&amp;filter=v5.*&amp;label=tag" alt="Docker Web version" /></a></div></td>
+      <td width="550" align="left">JumpServer web gateway and static assets</td>
+    </tr>
+  </tbody>
+</table>
 
-| :warning: 注意                 |
-| :--------------------------- |
-| 该环境仅作体验目的使用，我们会定时清理、重置数据！    |
-| 请勿修改体验环境用户的密码！               |
-| 请勿在环境中添加业务生产环境地址、用户名密码等敏感信息！ |
+## Contributing
 
-### 快速开始
+Contributions are welcome. See [CONTRIBUTING.md][contributing-link] for guidelines.
 
-- [极速安装](https://docs.jumpserver.org/zh/master/install/setup_by_fast/)
-- [完整文档](https://docs.jumpserver.org)
-- [演示视频](https://www.bilibili.com/video/BV1ZV41127GB)
-- [手动安装](https://github.com/jumpserver/installer)
+## License
 
-### 组件项目
-- [Lina](https://github.com/jumpserver/lina) JumpServer Web UI 项目
-- [Luna](https://github.com/jumpserver/luna) JumpServer Web Terminal 项目
-- [KoKo](https://github.com/jumpserver/koko) JumpServer 字符协议 Connector 项目，替代原来 Python 版本的 [Coco](https://github.com/jumpserver/coco)
-- [Lion](https://github.com/jumpserver/lion-release) JumpServer 图形协议 Connector 项目，依赖 [Apache Guacamole](https://guacamole.apache.org/)
-- [Clients](https://github.com/jumpserver/clients) JumpServer 客户端 项目
-- [Installer](https://github.com/jumpserver/installer) JumpServer 安装包 项目
+Copyright (c) 2014-2026 FIT2CLOUD, All rights reserved.
 
-### 社区
+Licensed under The GNU General Public License version 3 (GPLv3) (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
 
-如果您在使用过程中有任何疑问或对建议，欢迎提交 [GitHub Issue](https://github.com/jumpserver/jumpserver/issues/new/choose) 或加入到我们的社区当中进行进一步交流沟通。
+https://www.gnu.org/licenses/gpl-3.0.html
 
-#### 微信交流群
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an " AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
 
-<img src="https://download.jumpserver.org/images/wecom-group.jpeg" alt="微信群二维码" width="200"/>
+<!-- JumpServer official link -->
+[docs-link]: https://jumpserver.com/docs
+[discord-link]: https://discord.com/invite/W6vYXmAQG2
+[deepwiki-link]: https://deepwiki.com/jumpserver/jumpserver/
+[contributing-link]: https://github.com/jumpserver/jumpserver/blob/dev/CONTRIBUTING.md
 
-### 贡献
-如果有你好的想法创意，或者帮助我们修复了 Bug, 欢迎提交 Pull Request
+<!-- JumpServer Other link-->
+[license-link]: https://www.gnu.org/licenses/gpl-3.0.html
+[docker-link]: https://hub.docker.com/u/jumpserver
+[github-release-link]: https://github.com/jumpserver/jumpserver/releases/latest
+[github-stars-link]: https://github.com/jumpserver/jumpserver
+[github-issues-link]: https://github.com/jumpserver/jumpserver/issues
 
-感谢以下贡献者，让 JumpServer 更加完善
-
-<a href="https://github.com/jumpserver/jumpserver/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=jumpserver/jumpserver" />
-</a>
-
-<a href="https://github.com/jumpserver/koko/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=jumpserver/koko" />
-</a>
-
-<a href="https://github.com/jumpserver/lina/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=jumpserver/lina" />
-</a>
-
-<a href="https://github.com/jumpserver/luna/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=jumpserver/luna" />
-</a>
-
-
-
-### 致谢
-- [Apache Guacamole](https://guacamole.apache.org/) Web页面连接 RDP, SSH, VNC协议设备，JumpServer 图形化组件 Lion 依赖 
-- [OmniDB](https://omnidb.org/) Web页面连接使用数据库，JumpServer Web数据库依赖
-
-
-### JumpServer 企业版 
-- [申请企业版试用](https://jinshuju.net/f/kyOYpi)
-
-### 案例研究
-
-- [JumpServer 堡垒机护航顺丰科技超大规模资产安全运维](https://blog.fit2cloud.com/?p=1147)；
-- [JumpServer 堡垒机让“大智慧”的混合 IT 运维更智慧](https://blog.fit2cloud.com/?p=882)；
-- [携程 JumpServer 堡垒机部署与运营实战](https://blog.fit2cloud.com/?p=851)；
-- [小红书的JumpServer堡垒机大规模资产跨版本迁移之路](https://blog.fit2cloud.com/?p=516)；
-- [JumpServer堡垒机助力中手游提升多云环境下安全运维能力](https://blog.fit2cloud.com/?p=732)；
-- [中通快递：JumpServer主机安全运维实践](https://blog.fit2cloud.com/?p=708)；
-- [东方明珠：JumpServer高效管控异构化、分布式云端资产](https://blog.fit2cloud.com/?p=687)；
-- [江苏农信：JumpServer堡垒机助力行业云安全运维](https://blog.fit2cloud.com/?p=666)。
-
-### 安全说明
-
-JumpServer是一款安全产品，请参考 [基本安全建议](https://docs.jumpserver.org/zh/master/install/install_security/) 部署安装.
-
-如果你发现安全问题，可以直接联系我们：
-
-- ibuler@fit2cloud.com 
-- support@fit2cloud.com 
-- 400-052-0755
-
-### License & Copyright
-
-Copyright (c) 2014-2021 飞致云 FIT2CLOUD, All rights reserved.
-
-Licensed under The GNU General Public License version 2 (GPLv2)  (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
-
-https://www.gnu.org/licenses/gpl-2.0.html
-
-Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
-
+<!-- Shield link-->
+[docs-shield]: https://img.shields.io/badge/documentation-148F76
+[github-release-shield]: https://img.shields.io/github/v/release/jumpserver/jumpserver
+[github-stars-shield]: https://img.shields.io/github/stars/jumpserver/jumpserver?color=%231890FF&style=flat-square   
+[docker-shield]: https://img.shields.io/docker/pulls/jumpserver/jms_all.svg
+[license-shield]: https://img.shields.io/github/license/jumpserver/jumpserver
+[deepwiki-shield]: https://img.shields.io/badge/deepwiki-devin?color=blue
+[discord-shield]: https://img.shields.io/discord/1194233267294052363?style=flat&logo=discord&logoColor=%23f5f5f5&labelColor=%235462eb&color=%235462eb

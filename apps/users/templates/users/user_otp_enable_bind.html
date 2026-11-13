@@ -30,8 +30,8 @@
 
 
     <script>
-        $('.change-color li:eq(1) i').css('color', '#1ab394');
-        $('.change-color li:eq(2) i').css('color', '#1ab394');
+        $('.change-color li:eq(1) i').css('color', '{{ INTERFACE.primary_color }}');
+        $('.change-color li:eq(2) i').css('color', '{{ INTERFACE.primary_color }}');
 
         function submitForm() {
             $('#bind-form').submit()
@@ -41,8 +41,8 @@
             // 生成用户绑定otp的二维码
             var qrcode = new QRCode(document.getElementById('qr_code'), {
                 text: "{{ otp_uri|safe}}",
-                width: 180 ,
-                height: 180,
+                width: 190 ,
+                height: 190,
                 colorDark: '#000000',
                 colorLight: '#ffffff',
                 correctlevel: QRCode.CorrectLevel.H

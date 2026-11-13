@@ -1,27 +1,25 @@
 # -*- coding: utf-8 -*-
 #
-import re
-import json
-from six import string_types
 import base64
-import os
-import time
 import hashlib
+import json
+import os
+import re
+import time
 from io import StringIO
-from itertools import chain
 
 import paramiko
 import sshpubkeys
+from cryptography.hazmat.primitives import serialization
+from django.conf import settings
+from django.core.serializers.json import DjangoJSONEncoder
 from itsdangerous import (
     TimedJSONWebSignatureSerializer, JSONWebSignatureSerializer,
     BadSignature, SignatureExpired
 )
-from django.conf import settings
-from django.core.serializers.json import DjangoJSONEncoder
-from django.db.models.fields.files import FileField
+from six import string_types
 
 from .http import http_date
-
 
 UUID_PATTERN = re.compile(r'[0-9a-zA-Z\-]{36}')
 
@@ -41,6 +39,7 @@ class Singleton(type):
 
 class Signer(metaclass=Singleton):
     """用来加密,解密,和基于时间戳的方式验证token"""
+
     def __init__(self, secret_key=None):
         self.secret_key = secret_key
 
@@ -69,31 +68,37 @@ class Signer(metaclass=Singleton):
             return None
 
 
+_supported_paramiko_ssh_key_types = (
+    paramiko.RSAKey,
+    paramiko.DSSKey,
+    paramiko.Ed25519Key,
+    paramiko.ECDSAKey,)
+
+
 def ssh_key_string_to_obj(text, password=None):
     key = None
-    try:
-        key = paramiko.RSAKey.from_private_key(StringIO(text), password=password)
-    except paramiko.SSHException:
-        pass
-    else:
-        return key
-
-    try:
-        key = paramiko.DSSKey.from_private_key(StringIO(text), password=password)
-    except paramiko.SSHException:
-        pass
-    else:
-        return key
-
+    for ssh_key_type in _supported_paramiko_ssh_key_types:
+        try:
+            key = ssh_key_type.from_private_key(StringIO(text), password=password)
+            return key
+        except paramiko.SSHException:
+            pass
+    if key is None:
+        raise ValueError('Invalid private key')
     return key
 
 
-def ssh_pubkey_gen(private_key=None, username='jumpserver', hostname='localhost', password=None):
+def ssh_private_key_gen(private_key, password=None):
     if isinstance(private_key, bytes):
         private_key = private_key.decode("utf-8")
     if isinstance(private_key, string_types):
         private_key = ssh_key_string_to_obj(private_key, password=password)
-    if not isinstance(private_key, (paramiko.RSAKey, paramiko.DSSKey)):
+    return private_key
+
+
+def ssh_pubkey_gen(private_key=None, username='jumpserver', hostname='localhost', password=None):
+    private_key = ssh_private_key_gen(private_key, password=password)
+    if not isinstance(private_key, _supported_paramiko_ssh_key_types):
         raise IOError('Invalid private key')
 
     public_key = "%(key_type)s %(key_content)s %(username)s@%(hostname)s" % {
@@ -132,17 +137,67 @@ def ssh_key_gen(length=2048, type='rsa', password=None, username='jumpserver', h
 
 
 def validate_ssh_private_key(text, password=None):
-    if isinstance(text, bytes):
-        try:
-            text = text.decode("utf-8")
-        except UnicodeDecodeError:
-            return False
+    key = parse_ssh_private_key_str(text, password=password)
+    return bool(key)
 
-    key = ssh_key_string_to_obj(text, password=password)
-    if key is None:
-        return False
-    else:
-        return True
+
+def parse_ssh_private_key_str(text: bytes, password=None) -> str:
+    private_key = _parse_ssh_private_key(text, password=password)
+    if private_key is None:
+        return ""
+    # 解析之后，转换成 openssh 格式的私钥
+    private_key_bytes = private_key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.OpenSSH,
+        serialization.NoEncryption()
+    )
+    return private_key_bytes.decode('utf-8')
+
+
+def parse_ssh_public_key_str(text: bytes = "", password=None) -> str:
+    private_key = _parse_ssh_private_key(text, password=password)
+    if private_key is None:
+        return ""
+    public_key_bytes = private_key.public_key().public_bytes(
+        serialization.Encoding.OpenSSH,
+        serialization.PublicFormat.OpenSSH,
+    )
+    return public_key_bytes.decode('utf-8')
+
+
+def _parse_ssh_private_key(text, password=None):
+    """
+    text: bytes
+    password: str
+    return:private key types:
+                ec.EllipticCurvePrivateKey,
+                rsa.RSAPrivateKey,
+                dsa.DSAPrivateKey,
+                ed25519.Ed25519PrivateKey,
+    """
+    if not bool(password):
+        password = None
+    if isinstance(text, str):
+        try:
+            text = text.encode("utf-8")
+        except UnicodeDecodeError:
+            return None
+    if isinstance(password, str):
+        try:
+            password = password.encode("utf-8")
+        except UnicodeDecodeError:
+            return None
+
+    try:
+        if is_openssh_format_key(text):
+            return serialization.load_ssh_private_key(text, password=password)
+        return serialization.load_pem_private_key(text, password=password)
+    except (ValueError, TypeError):
+        return None
+
+
+def is_openssh_format_key(text: bytes):
+    return text.startswith(b"-----BEGIN OPENSSH PRIVATE KEY-----")
 
 
 def validate_ssh_public_key(text):
@@ -181,10 +236,28 @@ def make_signature(access_key_secret, date=None):
     return content_md5(data)
 
 
-def encrypt_password(password, salt=None):
-    from passlib.hash import sha512_crypt
-    if password:
+def encrypt_password(password, salt=None, algorithm='sha512'):
+    from passlib.hash import sha512_crypt, des_crypt
+
+    def sha512():
         return sha512_crypt.using(rounds=5000).hash(password, salt=salt)
+
+    def des():
+        return des_crypt.hash(password, salt=salt[:2])
+
+    support_algorithm = {
+        'sha512': sha512,
+        'des': des
+    }
+
+    if isinstance(algorithm, str):
+        algorithm = algorithm.lower()
+
+    if algorithm not in support_algorithm.keys():
+        algorithm = 'sha512'
+
+    if password and support_algorithm[algorithm]:
+        return support_algorithm[algorithm]()
     return None
 
 
@@ -200,34 +273,7 @@ def ensure_last_char_is_ascii(data):
     remain = ''
 
 
-secret_pattern = re.compile(r'password|secret|key', re.IGNORECASE)
-
-
-def model_to_dict_pro(instance, fields=None, exclude=None):
-    from ..fields.model import EncryptMixin
-    opts = instance._meta
-    data = {}
-    for f in chain(opts.concrete_fields, opts.private_fields):
-        if not getattr(f, 'editable', False):
-            continue
-        if fields and f.name not in fields:
-            continue
-        if exclude and f.name in exclude:
-            continue
-        if isinstance(f, FileField):
-            continue
-        if isinstance(f, EncryptMixin):
-            continue
-        if secret_pattern.search(f.name):
-            continue
-        value = f.value_from_object(instance)
-        data[f.name] = value
-    return data
-
-
-def model_to_json(instance, sort_keys=True, indent=2, cls=None):
-    data = model_to_dict_pro(instance)
+def data_to_json(data, sort_keys=True, indent=2, cls=None):
     if cls is None:
         cls = DjangoJSONEncoder
-    return json.dumps(data, sort_keys=sort_keys, indent=indent, cls=cls)
-
+    return json.dumps(data, ensure_ascii=False, sort_keys=sort_keys, indent=indent, cls=cls)

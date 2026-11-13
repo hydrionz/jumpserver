@@ -1,11 +1,11 @@
 import time
 
-from redis import Redis
+from channels_redis.core import RedisChannelLayer as _RedisChannelLayer
 
 from common.utils.lock import DistributedLock
+from common.utils.connection import get_redis_client
 from common.utils import lazyproperty
 from common.utils import get_logger
-from jumpserver.const import CONFIG
 
 logger = get_logger(__file__)
 
@@ -58,7 +58,7 @@ class Cache(metaclass=CacheType):
 
     def __init__(self):
         self._data = None
-        self.redis = Redis(host=CONFIG.REDIS_HOST, port=CONFIG.REDIS_PORT, password=CONFIG.REDIS_PASSWORD)
+        self.redis = get_redis_client()
 
     def __getitem__(self, item):
         return self.field_desc_mapper[item]
@@ -111,7 +111,7 @@ class Cache(metaclass=CacheType):
                 value = self[field].to_internal_value(v.decode())
                 internal_data[field] = value
             else:
-                logger.warn(f'Cache got invalid field: '
+                logger.warning(f'Cache got invalid field: '
                             f'key={self.key} '
                             f'invalid_field={field} '
                             f'valid_fields={self.field_names}')
@@ -173,7 +173,6 @@ class Cache(metaclass=CacheType):
     def expire(self, *fields):
         self._data = None
         if not fields:
-            logger.debug(f'Delete cached key: key={self.key}')
             self.redis.delete(self.key)
         else:
             self.redis.hdel(self.key, *fields)
@@ -219,3 +218,29 @@ class CacheValueDesc:
 
     def to_internal_value(self, value):
         return self.field_type.field_type(value)
+
+
+class RedisChannelLayer(_RedisChannelLayer):
+    async def _brpop_with_clean(self, index, channel, timeout):
+        cleanup_script = """
+            local backed_up = redis.call('ZRANGE', ARGV[2], 0, -1, 'WITHSCORES')
+            for i = #backed_up, 1, -2 do
+                redis.call('ZADD', ARGV[1], backed_up[i], backed_up[i - 1])
+            end
+            redis.call('DEL', ARGV[2])
+        """
+        backup_queue = self._backup_channel_name(channel)
+        async with self.connection(index) as connection:
+            # 部分云厂商的 Redis 此操作会报错(不支持，比如阿里云有限制)
+            try:
+                await connection.eval(cleanup_script, 0, channel, backup_queue)
+            except:
+                pass
+            result = await connection.bzpopmin(channel, timeout=timeout)
+
+            if result is not None:
+                _, member, timestamp = result
+                await connection.zadd(backup_queue, {member: float(timestamp)})
+            else:
+                member = None
+            return member

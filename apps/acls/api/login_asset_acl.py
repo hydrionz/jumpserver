@@ -1,14 +1,18 @@
 from orgs.mixins.api import OrgBulkModelViewSet
-from common.permissions import IsOrgAdmin
+from .common import ACLUserAssetFilterMixin
 from .. import models, serializers
-
 
 __all__ = ['LoginAssetACLViewSet']
 
 
+class LoginAssetACLFilter(ACLUserAssetFilterMixin):
+    class Meta:
+        model = models.LoginAssetACL
+        fields = ['id', 'name', 'users', 'assets', 'action', *models.LoginAssetACL.CONTROL_FIELDS]
+
+
 class LoginAssetACLViewSet(OrgBulkModelViewSet):
     model = models.LoginAssetACL
-    filterset_fields = ('name', )
-    search_fields = filterset_fields
-    permission_classes = (IsOrgAdmin, )
+    filterset_class = LoginAssetACLFilter
+    search_fields = ['name']
     serializer_class = serializers.LoginAssetACLSerializer

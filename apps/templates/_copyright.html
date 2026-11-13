@@ -1,2 +1,4 @@
-{#{% load i18n %}#}
-{#<strong>Copyright</strong> {{ COPYRIGHT }}#}
+{% load i18n %}
+{% if not XPACK_ENABLED %}
+<strong>{% trans 'Copyright' %}</strong> {{ COPYRIGHT }}
+{% endif %}

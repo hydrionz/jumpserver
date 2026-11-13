@@ -1,5 +1,6 @@
 # coding: utf-8
 #
-from .asset import *
-from .application import *
-from .system_user_permission import *
+from .permission import *
+from .permission_relation import *
+from .user_permission import *
+from .tree import *

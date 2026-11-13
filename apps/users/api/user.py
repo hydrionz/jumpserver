@@ -1,29 +1,36 @@
 # ~*~ coding: utf-8 ~*~
 from collections import defaultdict
 
-from django.utils.translation import ugettext as _
-from rest_framework.decorators import action
+from django.core.cache import cache
+from django.utils.translation import gettext, gettext as _
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import generics
+from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
-from rest_framework_bulk import BulkModelViewSet
-from django.db.models import Prefetch
+from rest_framework_bulk.generics import BulkModelViewSet
 
-from common.permissions import (
-    IsOrgAdmin, IsOrgAdminOrAppUser,
-    CanUpdateDeleteUser, IsSuperUser
-)
-from common.mixins import CommonApiMixin
+from authentication.permissions import UserConfirmation, ConfirmType
+from authentication.schema import CONFIRMATION_REQUIRED_RESPONSE
+from common.api import CommonApiMixin, SuggestionMixin
+from common.permissions import IsValidUser
+from common.drf.filters import AttrRulesFilterBackend
 from common.utils import get_logger
-from orgs.utils import current_org
-from orgs.models import ROLE as ORG_ROLE, OrganizationMember
+from orgs.utils import current_org, tmp_to_root_org
+from rbac.models import Role, RoleBinding
+from rbac.permissions import RBACPermission
 from users.utils import LoginBlockUtil, MFABlockUtils
 from .mixins import UserQuerysetMixin
-from ..notifications import ResetMFAMsg
 from .. import serializers
-from ..serializers import UserSerializer, MiniUserSerializer, InviteSerializer
+from ..exceptions import UnableToDeleteAllUsers
+from ..filters import UserFilter
 from ..models import User
-from ..signals import post_user_create
-from ..filters import OrgRoleUserFilterBackend, UserFilter
+from ..notifications import ResetMFAMsg
+from ..permissions import UserObjectPermission
+from ..serializers import (
+    UserSerializer, MiniUserSerializer, InviteSerializer, UserRetrieveSerializer
+)
+from ..signals import post_user_create, post_user_update
 
 logger = get_logger(__name__)
 __all__ = [
@@ -32,95 +39,137 @@ __all__ = [
 ]
 
 
-class UserViewSet(CommonApiMixin, UserQuerysetMixin, BulkModelViewSet):
+class UserViewSet(CommonApiMixin, UserQuerysetMixin, SuggestionMixin, BulkModelViewSet):
     filterset_class = UserFilter
-    search_fields = ('username', 'email', 'name', 'id', 'source', 'role')
-    permission_classes = (IsOrgAdmin, CanUpdateDeleteUser)
+    extra_filter_backends = [AttrRulesFilterBackend]
+    search_fields = ('username', 'name')
+    permission_classes = [RBACPermission, UserObjectPermission]
     serializer_classes = {
         'default': UserSerializer,
-        'suggestion': MiniUserSerializer,
         'invite': InviteSerializer,
+        'match': MiniUserSerializer,
+        'retrieve': UserRetrieveSerializer,
     }
-    extra_filter_backends = [OrgRoleUserFilterBackend]
-    ordering_fields = ('name',)
-    ordering = ('name', )
+    rbac_perms = {
+        'match': 'users.match_user',
+        'invite': 'users.invite_user',
+        'remove': 'users.remove_user',
+        'bulk_remove': 'users.remove_user',
+    }
+    slug_field = 'username'
 
-    def get_queryset(self):
-        queryset = super().get_queryset().prefetch_related(
-            'groups'
-        )
-        if not current_org.is_root():
-            # 为在列表中计算用户在真实组织里的角色
-            queryset = queryset.prefetch_related(
-                Prefetch(
-                    'm2m_org_members',
-                    queryset=OrganizationMember.objects.filter(org__id=current_org.id)
-                )
-            )
+    def allow_bulk_destroy(self, qs, filtered):
+        is_valid = filtered.count() < qs.count()
+        if not is_valid:
+            raise UnableToDeleteAllUsers()
+        return True
+
+    def perform_destroy(self, instance):
+        if instance.username == self.request.user.username:
+            raise PermissionDenied(_("You cannot delete yourself. Please disable it instead."))
+        if instance.username == 'admin':
+            raise PermissionDenied(_("Cannot delete the admin user. Please disable it instead."))
+        super().perform_destroy(instance)
+
+    @action(methods=['get'], detail=False, url_path='suggestions')
+    def match(self, request, *args, **kwargs):
+        with tmp_to_root_org():
+            return super().match(request, *args, **kwargs)
+
+    def get_serializer(self, *args, **kwargs):
+        """重写 get_serializer, 用于设置用户的角色缓存
+        放到 paginate_queryset 里面会导致 导出有问题, 因为导出的时候，没有 pager
+        """
+        if self.request.method.lower() in ['get'] \
+            and self.request.query_params.get('fields_size') not in ['mini'] \
+            and len(args) == 1 \
+            and kwargs.get('many'):
+            # 批量更新一些用户时，args[0] 是全量 queryset 速度极慢，所以只在 get list 的时候设置缓存
+            queryset = self.set_users_roles_for_cache(args[0])
+            queryset = self.set_users_orgs_roles(queryset)
+            queryset = self.set_users_login_blocked(queryset)
+            args = (queryset,)
+        return super().get_serializer(*args, **kwargs)
+
+    @staticmethod
+    def set_users_roles_for_cache(queryset):
+        # Todo: 未来有机会用 SQL 实现
+        queryset_list = queryset
+        user_ids = [u.id for u in queryset_list]
+        role_bindings = RoleBinding.objects.filter(user_id__in=user_ids) \
+            .values('user_id', 'role_id', 'scope')
+
+        role_mapper = {r.id: r for r in Role.objects.all()}
+        user_org_role_mapper = defaultdict(set)
+        user_system_role_mapper = defaultdict(set)
+
+        for binding in role_bindings:
+            role_id = binding['role_id']
+            user_id = binding['user_id']
+            if binding['scope'] == RoleBinding.Scope.system:
+                user_system_role_mapper[user_id].add(role_mapper[role_id])
+            else:
+                user_org_role_mapper[user_id].add(role_mapper[role_id])
+
+        for u in queryset_list:
+            system_roles = user_system_role_mapper[u.id]
+            org_roles = user_org_role_mapper[u.id]
+            u.org_roles.cache_set(org_roles)
+            u.system_roles.cache_set(system_roles)
+        return queryset_list
+
+    @staticmethod
+    def set_users_orgs_roles(queryset):
+        user_ids = [u.id for u in queryset]
+        rbs = RoleBinding.objects_raw.filter(
+            user_id__in=user_ids, scope='org'
+        ).select_related('role', 'org')
+        user_rbs_mapper = defaultdict(set)
+        for rb in rbs:
+            user_rbs_mapper[rb.user_id].add(rb)
+
+        for u in queryset:
+            user_rbs = user_rbs_mapper[u.id]
+            orgs_roles = defaultdict(set)
+            for rb in user_rbs:
+                orgs_roles[rb.org_name].add(rb.role.display_name)
+            setattr(u, 'orgs_roles', orgs_roles)
         return queryset
 
-    def send_created_signal(self, users):
-        if not isinstance(users, list):
-            users = [users]
-        for user in users:
-            post_user_create.send(self.__class__, user=user)
-
     @staticmethod
-    def set_users_to_org(users, org_roles, update=False):
-        # 只有真实存在的组织才真正关联用户
-        if not current_org or current_org.is_root():
-            return
-        for user, roles in zip(users, org_roles):
-            if update and roles is None:
-                continue
-            if not roles:
-                # 当前组织创建的用户，至少是该组织的`User`
-                roles = [ORG_ROLE.USER]
-            OrganizationMember.objects.set_user_roles(current_org, user, roles)
+    def set_users_login_blocked(queryset):
+        login_keys = {
+            u.id: LoginBlockUtil.get_user_block_key(u.username)
+            for u in queryset
+        }
+        mfa_keys = {
+            u.id: MFABlockUtils.get_user_block_key(u.username)
+            for u in queryset
+        }
+        if not login_keys:
+            return queryset
+        blocked = cache.get_many([*login_keys.values(), *mfa_keys.values()])
+
+        for u in queryset:
+            is_blocked = bool(
+                blocked.get(login_keys[u.id]) or blocked.get(mfa_keys[u.id])
+            )
+            setattr(u, 'login_blocked', is_blocked)
+        return queryset
 
     def perform_create(self, serializer):
-        org_roles = self.get_serializer_org_roles(serializer)
-        # 创建用户
         users = serializer.save()
         if isinstance(users, User):
             users = [users]
-        self.set_users_to_org(users, org_roles)
         self.send_created_signal(users)
 
-    def get_permissions(self):
-        if self.action in ["retrieve", "list"]:
-            if self.request.query_params.get('all'):
-                self.permission_classes = (IsSuperUser,)
-            else:
-                self.permission_classes = (IsOrgAdminOrAppUser,)
-        elif self.action in ['destroy']:
-            self.permission_classes = (IsSuperUser,)
-        return super().get_permissions()
-
-    def perform_bulk_destroy(self, objects):
-        for obj in objects:
-            self.check_object_permissions(self.request, obj)
-            self.perform_destroy(obj)
-
-    @staticmethod
-    def get_serializer_org_roles(serializer):
-        validated_data = serializer.validated_data
-        # `org_roles` 先 `pop`
-        if isinstance(validated_data, list):
-            org_roles = [item.pop('org_roles', None) for item in validated_data]
-        else:
-            org_roles = [validated_data.pop('org_roles', None)]
-        return org_roles
-
-    def perform_update(self, serializer):
-        org_roles = self.get_serializer_org_roles(serializer)
+    def perform_bulk(self, serializer):
         users = serializer.save()
         if isinstance(users, User):
             users = [users]
-        self.set_users_to_org(users, org_roles, update=True)
+        self.send_updated_signal(users)
 
     def perform_bulk_update(self, serializer):
-        # TODO: 需要测试
         user_ids = [
             d.get("id") or d.get("pk") for d in serializer.validated_data
         ]
@@ -129,46 +178,47 @@ class UserViewSet(CommonApiMixin, UserQuerysetMixin, BulkModelViewSet):
             self.check_object_permissions(self.request, user)
         return super().perform_bulk_update(serializer)
 
-    @action(methods=['get'], detail=False, permission_classes=(IsOrgAdmin,))
-    def suggestion(self, *args, **kwargs):
-        queryset = User.objects.exclude(role=User.ROLE.APP)
-        queryset = self.filter_queryset(queryset)[:6]
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
+    def perform_bulk_destroy(self, objects):
+        for obj in objects:
+            self.check_object_permissions(self.request, obj)
+            self.perform_destroy(obj)
 
-    @action(methods=['post'], detail=False, permission_classes=(IsOrgAdmin,))
+    @action(methods=['post'], detail=False)
     def invite(self, request):
-        data = request.data
-        if not isinstance(data, list):
-            data = [request.data]
         if not current_org or current_org.is_root():
-            error = {"error": "Not a valid org"}
+            error = {"error": gettext("Not a valid org")}
             return Response(error, status=400)
 
         serializer_cls = self.get_serializer_class()
-        serializer = serializer_cls(data=data, many=True)
+        serializer = serializer_cls(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated_data = serializer.validated_data
 
-        users_by_role = defaultdict(list)
-        for i in validated_data:
-            users_by_role[i['role']].append(i['user'])
+        users = validated_data['users']
+        org_roles = validated_data['org_roles']
+        has_self = any([str(u.id) == str(request.user.id) for u in users])
+        if has_self and not request.user.is_superuser:
+            error = {"error": _("Can not invite self")}
+            return Response(error, status=400)
 
-        OrganizationMember.objects.add_users_by_role(
-            current_org,
-            users=users_by_role[ORG_ROLE.USER],
-            admins=users_by_role[ORG_ROLE.ADMIN],
-            auditors=users_by_role[ORG_ROLE.AUDITOR]
-        )
+        for user in users:
+            if current_org in user.joined_orgs:
+                error = {
+                    "error": _("This user {} is already a member of the organization. No need to invite again").format(
+                        user.username)
+                }
+                return Response(error, status=400)
+            # 追加角色，不清除除原有的角色
+            user.org_roles.add(*org_roles)
         return Response(serializer.data, status=201)
 
-    @action(methods=['post'], detail=True, permission_classes=(IsOrgAdmin,))
+    @action(methods=['post'], detail=True)
     def remove(self, request, *args, **kwargs):
         instance = self.get_object()
         instance.remove()
         return Response(status=204)
 
-    @action(methods=['post'], detail=False, permission_classes=(IsOrgAdmin,), url_path='remove')
+    @action(methods=['post'], detail=False, url_path='remove')
     def bulk_remove(self, request, *args, **kwargs):
         qs = self.get_queryset()
         filtered = self.filter_queryset(qs)
@@ -177,9 +227,23 @@ class UserViewSet(CommonApiMixin, UserQuerysetMixin, BulkModelViewSet):
             instance.remove()
         return Response(status=204)
 
+    def send_created_signal(self, users):
+        if not isinstance(users, list):
+            users = [users]
+        for user in users:
+            post_user_create.send(self.__class__, user=user)
+
+    def send_updated_signal(self, users):
+        if not isinstance(users, list):
+            users = [users]
+        for user in users:
+            post_user_update.send(self.__class__, user=user)
+
 
 class UserChangePasswordApi(UserQuerysetMixin, generics.UpdateAPIView):
-    permission_classes = (IsOrgAdmin,)
+    # The gateway collects the new password in its approval form and redacts
+    # the response before it reaches the model.
+    chat_ai_safe_sensitive_actions = ('PUT', 'PATCH')
     serializer_class = serializers.ChangeUserPasswordSerializer
 
     def perform_update(self, serializer):
@@ -189,7 +253,6 @@ class UserChangePasswordApi(UserQuerysetMixin, generics.UpdateAPIView):
 
 
 class UserUnblockPKApi(UserQuerysetMixin, generics.UpdateAPIView):
-    permission_classes = (IsOrgAdmin,)
     serializer_class = serializers.UserSerializer
 
     def perform_update(self, serializer):
@@ -199,15 +262,47 @@ class UserUnblockPKApi(UserQuerysetMixin, generics.UpdateAPIView):
         MFABlockUtils.unblock_user(username)
 
 
-class UserResetMFAApi(UserQuerysetMixin, generics.RetrieveAPIView):
-    permission_classes = (IsOrgAdmin,)
+class UserResetMFAApi(UserQuerysetMixin, generics.GenericAPIView):
     serializer_class = serializers.ResetOTPSerializer
+    http_method_names = ['post', 'options']
+    permission_classes = [IsValidUser, RBACPermission, UserConfirmation.require(ConfirmType.MFA)]
+    rbac_perms = {'POST': 'users.change_user'}
 
-    def retrieve(self, request, *args, **kwargs):
+    @extend_schema(
+        request=None,
+        description=(
+            'Reset another user\'s active MFA methods that support reset. Requires users.change_user. '
+            'When identity confirmation is enabled, the current operator must complete MFA confirmation; '
+            'password confirmation alone is insufficient. Confirm the operator, not the target user.\n\n'
+            '1. GET /api/v1/authentication/confirm/?confirm_type=mfa to discover an available method.\n'
+            '2. POST /api/v1/authentication/confirm/ with confirm_type=mfa, mfa_type (for example otp), '
+            'and secret_key containing the operator\'s valid code for code-based methods.\n'
+            '3. Preserve the session cookie returned by confirmation and send it with the same authentication '
+            'credentials on subsequent requests. GET /api/v1/authentication/confirm/check/?confirm_type=mfa '
+            'must return 200 "ok".\n'
+            '4. POST this endpoint in that session before confirmation expires. MFA confirmation is valid '
+            'for SECURITY_MFA_VERIFY_TTL seconds (default 3600), subject to session expiry.\n\n'
+            'No request body is needed; msg is a response-only field. X-JMS-CONFIRM is not a supported '
+            'confirmation mechanism. HTTP 412 includes the required confirmation type, failure reason, '
+            'confirmation lifetime and confirmation endpoint. An operator without an available MFA method '
+            'must configure and enable one first. Self-reset is rejected; resetting a superuser requires '
+            'the operator to be a superuser.'
+        ),
+        responses={
+            200: serializers.ResetOTPSerializer,
+            400: OpenApiResponse(response={'type': 'object'}, description='Self-reset is not supported.'),
+            403: OpenApiResponse(response={'type': 'object'}, description='Insufficient permissions.'),
+            412: CONFIRMATION_REQUIRED_RESPONSE,
+        },
+    )
+    def post(self, request, *args, **kwargs):
         user = self.get_object() if kwargs.get('pk') else request.user
         if user == request.user:
             msg = _("Could not reset self otp, use profile reset instead")
             return Response({"error": msg}, status=400)
+
+        if user.is_superuser and not request.user.is_superuser:
+            raise PermissionDenied()
 
         backends = user.active_mfa_backends_mapper
         for backend in backends.values():

@@ -1,68 +1,28 @@
-from rest_framework.response import Response
+from django.utils.translation import gettext_lazy as _
 from rest_framework.generics import CreateAPIView
+from rest_framework.response import Response
 
-from common.permissions import IsAppUser
-from common.utils import reverse, lazyproperty
-from orgs.utils import tmp_to_org
-from tickets.api import GenericTicketStatusRetrieveCloseAPI
-from ..models import LoginAssetACL
+from common.exceptions import JMSException
+from common.utils import lazyproperty, get_request_ip_or_data
 from .. import serializers
+from ..models import LoginAssetACL
 
-__all__ = ['LoginAssetCheckAPI', 'LoginAssetConfirmStatusAPI']
+__all__ = ['LoginAssetCheckAPI']
 
 
 class LoginAssetCheckAPI(CreateAPIView):
-    permission_classes = (IsAppUser,)
     serializer_class = serializers.LoginAssetCheckSerializer
+    model = LoginAssetACL
+    rbac_perms = {
+        'POST': 'tickets.add_superticket'
+    }
+
+    def get_queryset(self):
+        return LoginAssetACL.objects.all()
 
     def create(self, request, *args, **kwargs):
-        is_need_confirm, response_data = self.check_if_need_confirm()
-        return Response(data=response_data, status=200)
-
-    def check_if_need_confirm(self):
-        queries = {
-            'user': self.serializer.user, 'asset': self.serializer.asset,
-            'system_user': self.serializer.system_user,
-            'action': LoginAssetACL.ActionChoices.login_confirm
-        }
-        with tmp_to_org(self.serializer.org):
-            acl = LoginAssetACL.filter(**queries).valid().first()
-
-        if not acl:
-            is_need_confirm = False
-            response_data = {}
-        else:
-            is_need_confirm = True
-            response_data = self._get_response_data_of_need_confirm(acl)
-        response_data['need_confirm'] = is_need_confirm
-        return is_need_confirm, response_data
-
-    def _get_response_data_of_need_confirm(self, acl):
-        ticket = LoginAssetACL.create_login_asset_confirm_ticket(
-            user=self.serializer.user,
-            asset=self.serializer.asset,
-            system_user=self.serializer.system_user,
-            assignees=acl.reviewers.all(),
-            org_id=self.serializer.org.id
-        )
-        confirm_status_url = reverse(
-            view_name='api-acls:login-asset-confirm-status',
-            kwargs={'pk': str(ticket.id)}
-        )
-        ticket_detail_url = reverse(
-            view_name='api-tickets:ticket-detail',
-            kwargs={'pk': str(ticket.id)},
-            external=True, api_to_ui=True
-        )
-        ticket_detail_url = '{url}?type={type}'.format(url=ticket_detail_url, type=ticket.type)
-        ticket_assignees = ticket.current_node.first().ticket_assignees.all()
-        data = {
-            'check_confirm_status': {'method': 'GET', 'url': confirm_status_url},
-            'close_confirm': {'method': 'DELETE', 'url': confirm_status_url},
-            'ticket_detail_url': ticket_detail_url,
-            'reviewers': [str(ticket_assignee.assignee) for ticket_assignee in ticket_assignees]
-        }
-        return data
+        data = self.check_review()
+        return Response(data=data, status=200)
 
     @lazyproperty
     def serializer(self):
@@ -70,6 +30,27 @@ class LoginAssetCheckAPI(CreateAPIView):
         serializer.is_valid(raise_exception=True)
         return serializer
 
+    def check_review(self):
+        user = self.serializer.user
+        asset = self.serializer.asset
 
-class LoginAssetConfirmStatusAPI(GenericTicketStatusRetrieveCloseAPI):
-    pass
+        account_username = self.serializer.validated_data.get('account_username')
+        queryset = LoginAssetACL.filter_queryset(
+            user=user, asset=asset, account_username=account_username,
+        )
+        acl = LoginAssetACL.get_match_rule_acls(
+            user, get_request_ip_or_data(self.request), queryset,
+        )
+        if acl and acl.is_action(acl.ActionChoices.reject):
+            raise JMSException(
+                code='acl_reject', detail=_('ACL action is reject: {}({})').format(acl.name, acl.id),
+            )
+
+        reviews = acl.pending_reviews(user, asset, account_username) if acl else ()
+        return {
+            'need_review': bool(reviews),
+            'requirements': [
+                field.removesuffix('_enabled') for field in LoginAssetACL.CONTROL_FIELDS
+                if acl and acl.enabled(field)
+            ],
+        }

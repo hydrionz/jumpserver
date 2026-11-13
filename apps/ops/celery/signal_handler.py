@@ -2,11 +2,11 @@
 #
 import logging
 
-from django.core.cache import cache
 from celery import subtask
 from celery.signals import (
     worker_ready, worker_shutdown, after_setup_logger
 )
+from django.core.cache import cache
 from django_celery_beat.models import PeriodicTask
 
 from common.utils import get_logger
@@ -19,13 +19,16 @@ safe_str = lambda x: x
 
 @worker_ready.connect
 def on_app_ready(sender=None, headers=None, **kwargs):
-    if cache.get("CELERY_APP_READY", 0) == 1:
+    if not cache.add("CELERY_APP_READY", 1, 10):
         return
-    cache.set("CELERY_APP_READY", 1, 10)
     tasks = get_after_app_ready_tasks()
     logger.debug("Work ready signal recv")
     logger.debug("Start need start task: [{}]".format(", ".join(tasks)))
     for task in tasks:
+        periodic_task = PeriodicTask.objects.filter(task=task).first()
+        if periodic_task and not periodic_task.enabled:
+            logger.debug("Periodic task [{}] is disabled!".format(task))
+            continue
         subtask(task).delay()
 
 

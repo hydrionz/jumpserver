@@ -16,12 +16,6 @@ def digest(corp_id, corp_secret):
     return dist
 
 
-def update_values(default: dict, others: dict):
-    for key in default.keys():
-        if key in others:
-            default[key] = others[key]
-
-
 def set_default(data: dict, default: dict):
     for key in default.keys():
         if key not in data:
@@ -29,7 +23,7 @@ def set_default(data: dict, default: dict):
 
 
 class DictWrapper:
-    def __init__(self, data:dict):
+    def __init__(self, data: dict):
         self.raw_data = data
 
     def __getitem__(self, item):
@@ -51,7 +45,7 @@ class DictWrapper:
         return str(self.raw_data)
 
     def __repr__(self):
-        return str(self.raw_data)
+        return repr(self.raw_data)
 
 
 def as_request(func):

@@ -1,21 +1,37 @@
 #!/usr/bin/env python3
 # coding: utf-8
 
-import os
-import subprocess
+import argparse
 import logging
 import logging.handlers
-import time
-import argparse
+import os
 import sys
+import time
+
+import django
+from django.core import management
+from django.db.utils import OperationalError
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, BASE_DIR)
+APP_DIR = os.path.join(BASE_DIR, 'apps')
 
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+os.chdir(APP_DIR)
+sys.path.insert(0, APP_DIR)
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "jumpserver.settings")
+django.setup()
 
 try:
-    from apps.jumpserver import const
+    from django.conf import settings
+    log_level = logging.DEBUG if settings.DEBUG_DEV else logging.INFO
+except Exception as e:
+    print("Load settings error: {}".format(e))
+    log_level = logging.INFO
+
+logging.basicConfig(level=log_level, format="%(asctime)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+
+try:
+    from jumpserver import const
+
     __version__ = const.VERSION
 except ImportError as e:
     print("Not found __version__: {}".format(e))
@@ -25,7 +41,9 @@ except ImportError as e:
     sys.exit(1)
 
 try:
-    from apps.jumpserver.const import CONFIG
+    from jumpserver.const import CONFIG
+    from common.utils.file import download_file
+    from common.utils import make_dirs
 except ImportError as e:
     print("Import error: {}".format(e))
     print("Could not find config file, `cp config_example.yml config.yml`")
@@ -33,101 +51,141 @@ except ImportError as e:
 
 os.environ["PYTHONIOENCODING"] = "UTF-8"
 
-logging.basicConfig(
-    format='%(asctime)s %(message)s', level=logging.INFO,
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-
 logger = logging.getLogger()
 
 try:
-    os.makedirs(os.path.join(BASE_DIR, "data", "static"))
-    os.makedirs(os.path.join(BASE_DIR, "data", "media"))
+    make_dirs(os.path.join(BASE_DIR, "data", "static"))
+    make_dirs(os.path.join(BASE_DIR, "data", "media"))
 except:
     pass
 
 
 def check_database_connection():
-    os.chdir(os.path.join(BASE_DIR, 'apps'))
     for i in range(60):
-        logging.info("Check database connection ...")
-        _code = subprocess.call("python manage.py showmigrations users ", shell=True)
-        if _code == 0:
+        logging.info(f"Check database connection: {i}")
+        try:
+            management.call_command('check', '--database', 'default')
             logging.info("Database connect success")
             return
+        except OperationalError:
+            logging.info('Database not setup, retry')
+        except Exception as exc:
+            logging.error('Unexpect error occur: {}'.format(str(exc)))
         time.sleep(1)
     logging.error("Connection database failed, exit")
     sys.exit(10)
 
 
-def check_migrations():
-    _apps_dir = os.path.join(BASE_DIR, 'apps')
-    _cmd = "python manage.py showmigrations | grep '\[.\]' | grep -v '\[X\]'"
-    _code = subprocess.call(_cmd, shell=True, cwd=_apps_dir)
-
-    if _code == 1:
-        return
-    # for i in range(3):
-    #     print("!!! Warning: Has SQL migrations not perform, 有 SQL 变更没有执行")
-    #     print("You should run `./PROC upgrade_db` first, 请先运行 ./PROC upgrade_db, 进行表结构变更")
-    # sys.exit(1)
-
-
 def expire_caches():
-    _apps_dir = os.path.join(BASE_DIR, 'apps')
-    _code = subprocess.call("python manage.py expire_caches", shell=True, cwd=_apps_dir)
-
-    if _code == 1:
-        return
+    try:
+        management.call_command('expire_caches')
+    except:
+        pass
 
 
 def perform_db_migrate():
     logging.info("Check database structure change ...")
-    os.chdir(os.path.join(BASE_DIR, 'apps'))
     logging.info("Migrate model change to database ...")
-    _code = subprocess.call('python3 manage.py migrate', shell=True)
-    if _code == 0:
-        return
-    logging.error('Perform migrate failed, exit')
-    sys.exit(11)
+
+    try:
+        management.call_command('migrate')
+    except Exception as e:
+        logging.error('Perform migrate failed')
+        raise e
 
 
 def collect_static():
     logging.info("Collect static files")
-    os.chdir(os.path.join(BASE_DIR, 'apps'))
-    _cmd = 'python3 manage.py collectstatic --no-input -c &> /dev/null '
-    subprocess.call(_cmd, shell=True)
-    logging.info("Collect static files done")
+    try:
+        management.call_command('collectstatic', '--no-input', '-c', verbosity=0, interactive=False)
+        logging.info("Collect static files done")
+    except:
+        pass
 
 
-def compile_i81n_file():
-    django_mo_file = os.path.join(BASE_DIR, 'apps', 'locale', 'zh', 'LC_MESSAGES', 'django.mo')
+def compile_i18n_file():
+    django_mo_file = os.path.join(BASE_DIR, 'apps', 'core', 'locale', 'zh', 'LC_MESSAGES', 'django.mo')
     if os.path.exists(django_mo_file):
         return
     os.chdir(os.path.join(BASE_DIR, 'apps'))
-    _cmd = 'python3 manage.py compilemessages --no-input -c &> /dev/null '
-    subprocess.call(_cmd, shell=True)
+    management.call_command('compilemessages', verbosity=0, interactive=False)
     logging.info("Compile i18n files done")
 
+
+def download_ip_db():
+    db_base_dir = os.path.join(APP_DIR, 'common', 'utils', 'ip')
+    db_path_url_mapper = {
+        ('geoip', 'GeoLite2-City.mmdb'): 'https://jms-pkg.oss-cn-beijing.aliyuncs.com/ip/GeoLite2-City.mmdb',
+        ('ipip', 'ipipfree.ipdb'): 'https://jms-pkg.oss-cn-beijing.aliyuncs.com/ip/ipipfree.ipdb'
+    }
+    for p, src in db_path_url_mapper.items():
+        path = os.path.join(db_base_dir, *p)
+        if os.path.isfile(path) and os.path.getsize(path) > 1000:
+            continue
+        print("Download ip db: {}".format(path))
+        download_file(src, path)
+
+
+def install_builtin_applets():
+    logging.info("Install builtin applets")
+    try:
+        management.call_command('install_builtin_applets', verbosity=0)
+    except Exception as e:
+        logging.error("Install builtin applets err: {}".format(e))
+
+
+def init_oauth2_provider():
+    logging.info("Initialize OAuth2 Provider")
+    try:
+        management.call_command('init_oauth2_provider', verbosity=0)
+    except Exception as e:
+        logging.error("Initialize OAuth2 Provider err: {}".format(e))
 
 def upgrade_db():
     collect_static()
     perform_db_migrate()
-    collect_static()
 
 
 def prepare():
-    # installer(check) & k8s(no check)
     check_database_connection()
-    check_migrations()
     upgrade_db()
     expire_caches()
+    download_ip_db()
+    install_builtin_applets()
+    init_oauth2_provider()
+
+
+def start_services():
+    services = args.services if isinstance(args.services, list) else [args.services]
+    if action == 'start' and {'all', 'web'} & set(services):
+        prepare()
+
+    start_args = []
+    if args.daemon:
+        start_args.append('--daemon')
+    if args.force:
+        start_args.append('--force')
+    if args.worker:
+        start_args.extend(['--worker', str(args.worker)])
+    else:
+        worker = os.environ.get('CORE_WORKER')
+        if isinstance(worker, str) and worker.isdigit():
+            start_args.extend(['--worker', worker])
+
+    try:
+        management.call_command(action, *services, *start_args)
+    except KeyboardInterrupt:
+        logging.info('Cancel ...')
+        time.sleep(2)
+    except Exception as exc:
+        logging.error("Start service error {}: {}".format(services, exc))
+        time.sleep(2)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description="""
-        Jumpserver service control tools;
+        JumpServer service control tools;
 
         Example: \r\n
 
@@ -141,11 +199,11 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         "services", type=str, default='all', nargs="*",
-        choices=("all", "web", "task"),
+        choices=("all", "web", "task", "ai"),
         help="The service to start",
     )
     parser.add_argument('-d', '--daemon', nargs="?", const=True)
-    parser.add_argument('-w', '--worker', type=int, nargs="?", default=4)
+    parser.add_argument('-w', '--worker', type=int, nargs="?")
     parser.add_argument('-f', '--force', nargs="?", const=True)
 
     args = parser.parse_args()
@@ -156,23 +214,4 @@ if __name__ == '__main__':
     elif action == "collect_static":
         collect_static()
     else:
-        services = args.services if isinstance(args.services, list) else [args.services]
-        if action == 'start' and {'all', 'web'} & set(services):
-            prepare()
-
-        services_string = ' '.join(services)
-        cmd = f'python manage.py {args.action} {services_string}'
-        if args.daemon:
-            cmd += ' --daemon'
-        if args.worker:
-            cmd += f' --worker {args.worker}'
-        if args.force:
-            cmd += ' --force'
-        apps_dir = os.path.join(BASE_DIR, 'apps')
-
-        try:
-            # processes: main(3s) -> call(0.25s) -> service -> sub-process
-            code = subprocess.call(cmd, shell=True, cwd=apps_dir)
-        except KeyboardInterrupt:
-            time.sleep(2)
-            pass
+        start_services()

@@ -5,22 +5,25 @@
 {% block title %} {{ title }}{% endblock %}
 
 {% block content %}
+    <style>
+        .alert.alert-msg {
+            background: #F5F5F7;
+        }
+    </style>
     <div>
         <p>
+            <div class="alert {% if error %} alert-danger {% else %} alert-info {% endif %}" id="messages">
             {% if error %}
-            <div class="alert alert-danger" id="messages">
                 {{ error }}
-            </div>
             {% else %}
-            <div class="alert alert-success" id="messages">
-                {{ message|safe }}
-            </div>
+                {{ message | safe }}
             {% endif %}
+            </div>
         </p>
 
         <div class="row">
             {% if has_cancel %}
-            <div class="col-sm-3">
+                <div class="col-sm-3">
                 <a href="{{ cancel_url }}" class="btn btn-default block full-width m-b">
                     {% trans 'Cancel' %}
                 </a>
@@ -40,24 +43,25 @@
 {% endblock %}
 
 {% block custom_foot_js %}
-<script>
+    <script>
+    var ttl = 1
     var message = ''
     var time = '{{ interval }}'
-
     {% if error %}
         message = '{{ error }}'
     {% else %}
         message = '{{ message|safe }}'
     {% endif %}
+    var redirect_url = '{{ redirect_url|escapejs }}'
 
     function redirect_page() {
-        if (time >= 0) {
+        if (time > 0) {
             var msg = message + '， <b>' + time + '</b> ...';
             $('#messages').html(msg);
-            time--;
-            setTimeout(redirect_page, 1000);
+            time -= ttl;
+            setTimeout(redirect_page, ttl * 1000);
         } else {
-            window.location.href = "{{ redirect_url }}";
+            window.location.href = redirect_url
         }
     }
     {% if auto_redirect %}
@@ -65,4 +69,3 @@
     {% endif %}
 </script>
 {% endblock %}
-

@@ -1,58 +1,90 @@
-# 编译代码
-FROM python:3.8.6-slim as stage-build
-MAINTAINER JumpServer Team <ibuler@qq.com>
+FROM golang:1.26-trixie AS pam-go
+
+FROM python:3.14-slim-trixie AS stage-pam-build
+COPY --from=pam-go /usr/local/go /usr/local/go
+ENV PATH=/usr/local/go/bin:$PATH
+RUN pip install --no-cache-dir build setuptools wheel
+WORKDIR /src/pam-clients
+COPY apps/accounts/clients/ ./
+RUN test -f distribution.py && test -f agent/go.mod \
+    || (echo "Initialize PAM clients: git submodule update --init --recursive apps/accounts/clients" >&2; exit 1)
+RUN --mount=type=cache,target=/root/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    python distribution.py --output /out
+
+FROM jumpserver/core-base:20261110_074518 AS stage-build
+
 ARG VERSION
-ENV VERSION=$VERSION
 
 WORKDIR /opt/jumpserver
+
 ADD . .
-RUN cd utils && bash -ixeu build.sh
+COPY --from=stage-pam-build /out/ /opt/jumpserver/apps/static/pam/
 
-# 构建运行时环境
-FROM python:3.8.6-slim
-ARG PIP_MIRROR=https://pypi.douban.com/simple
-ENV PIP_MIRROR=$PIP_MIRROR
-ARG PIP_JMS_MIRROR=https://pypi.douban.com/simple
-ENV PIP_JMS_MIRROR=$PIP_JMS_MIRROR
+RUN test -f apps/accounts/clients/go/go.mod \
+    || (echo "Initialize PAM clients: git submodule update --init --recursive apps/accounts/clients" >&2; exit 1)
+
+RUN echo > /opt/jumpserver/config.yml \
+    && \
+    if [ -n "${VERSION}" ]; then \
+        sed -i "s@VERSION = .*@VERSION = '${VERSION}'@g" apps/jumpserver/const.py; \
+    fi
+RUN set -ex \
+    && export SECRET_KEY=$(head -c100 < /dev/urandom | base64 | tr -dc A-Za-z0-9 | head -c 48) \
+    && . /opt/py3/bin/activate \
+    && uv pip install --extra-index-url https://pypi.org/simple/ -r pyproject.toml \
+    && rm -rf /root/.cache/ \
+    && cd apps \
+    && python manage.py compilemessages
+
+
+FROM python:3.14-slim-trixie
+ENV LANG=en_US.UTF-8 \
+    PATH=/opt/py3/bin:$PATH
+
+ARG DEPENDENCIES="                    \
+        libldap2-dev                  \
+        libx11-dev"
+
+ARG TOOLS="                           \
+        cron                          \
+        ca-certificates               \
+        default-libmysqlclient-dev    \
+        libmariadb3                   \
+        postgresql-client             \
+        openssh-client                \
+        sshpass                       \
+        bubblewrap                    \
+        docker-cli"
+
+ARG APT_MIRROR=http://deb.debian.org
+
+RUN set -ex \
+    && sed -i "s@http://.*.debian.org@${APT_MIRROR}@g" /etc/apt/sources.list.d/debian.sources \
+    && ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
+    && apt-get update > /dev/null \
+    && apt-get -y install --no-install-recommends ${DEPENDENCIES} \
+    && apt-get -y install --no-install-recommends ${TOOLS} \
+    && mkdir -p /root/.ssh/ \
+    && echo "Host *\n\tStrictHostKeyChecking no\n\tUserKnownHostsFile /dev/null\n\tCiphers +aes128-cbc\n\tKexAlgorithms +diffie-hellman-group1-sha1\n\tHostKeyAlgorithms +ssh-rsa" > /root/.ssh/config \
+    && echo "no" | dpkg-reconfigure dash \
+    && apt-get clean all \
+    && rm -rf /var/lib/apt/lists/* \
+    && echo "0 3 * * * root find /tmp -type f -mtime +1 -size +1M -exec rm -f {} \; && date > /tmp/clean.log" > /etc/cron.d/cleanup_tmp \
+    && chmod 0644 /etc/cron.d/cleanup_tmp
+
+COPY --from=stage-build /opt /opt
+COPY --from=stage-build /usr/local/bin /usr/local/bin
+COPY --from=stage-build /opt/jumpserver/apps/libs/ansible/ansible.cfg /etc/ansible/
 
 WORKDIR /opt/jumpserver
-
-COPY ./requirements/deb_requirements.txt ./requirements/deb_requirements.txt
-RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list \
-    && sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list \
-    && apt update \
-    && apt -y install telnet iproute2 redis-tools default-mysql-client vim wget curl locales procps \
-    && apt -y install $(cat requirements/deb_requirements.txt) \
-    && rm -rf /var/lib/apt/lists/* \
-    && localedef -c -f UTF-8 -i zh_CN zh_CN.UTF-8 \
-    && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
-    && sed -i "s@# alias l@alias l@g" ~/.bashrc \
-    && echo "set mouse-=a" > ~/.vimrc
-
-COPY ./requirements/requirements.txt ./requirements/requirements.txt
-RUN pip install --upgrade pip==20.2.4 setuptools==49.6.0 wheel==0.34.2 -i ${PIP_MIRROR} \
-    && pip install --no-cache-dir $(grep -E 'jms|jumpserver' requirements/requirements.txt) -i ${PIP_JMS_MIRROR} \
-    && pip install --no-cache-dir -r requirements/requirements.txt -i ${PIP_MIRROR} \
-    && rm -rf ~/.cache/pip
-
-COPY --from=stage-build /opt/jumpserver/release/jumpserver /opt/jumpserver
-RUN mkdir -p /root/.ssh/ \
-    && echo "Host *\n\tStrictHostKeyChecking no\n\tUserKnownHostsFile /dev/null" > /root/.ssh/config
-
-RUN mkdir -p /opt/jumpserver/oracle/ \
-    && wget https://download.jumpserver.org/public/instantclient-basiclite-linux.x64-21.1.0.0.0.tar > /dev/null \
-    && tar xf instantclient-basiclite-linux.x64-21.1.0.0.0.tar -C /opt/jumpserver/oracle/ \
-    && echo "/opt/jumpserver/oracle/instantclient_21_1" > /etc/ld.so.conf.d/oracle-instantclient.conf \
-    && ldconfig \
-    && rm -f instantclient-basiclite-linux.x64-21.1.0.0.0.tar
-
-RUN echo > config.yml
 
 VOLUME /opt/jumpserver/data
-VOLUME /opt/jumpserver/logs
 
-ENV LANG=zh_CN.UTF-8
-
-EXPOSE 8070
-EXPOSE 8080
 ENTRYPOINT ["./entrypoint.sh"]
+
+EXPOSE 8080 8088
+
+STOPSIGNAL SIGQUIT
+
+CMD ["start", "all"]
